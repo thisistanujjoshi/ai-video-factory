@@ -116,7 +116,16 @@ export default function VideoDetailPage({ params }: { params: Promise<{ id: stri
             Publish now
           </button>
         )}
-        {NO_ACTION_STATES.includes(video.state) && (
+        {video.state === "published" && (
+          <button
+            disabled={busy}
+            className={button}
+            onClick={() => run(() => api.collectAnalytics(video.id))}
+          >
+            Collect analytics snapshot
+          </button>
+        )}
+        {NO_ACTION_STATES.includes(video.state) && video.state !== "published" && (
           <span className="text-sm text-neutral-500">No action available in this state.</span>
         )}
       </div>

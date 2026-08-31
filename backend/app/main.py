@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.analytics import router as analytics_router
 from app.api.content_profiles import router as content_profiles_router
 from app.api.health import router as health_router
 from app.api.ideas import router as ideas_router
@@ -22,3 +23,4 @@ app.include_router(health_router, prefix="/api/v1")
 app.include_router(content_profiles_router, prefix="/api/v1")
 app.include_router(ideas_router, prefix="/api/v1")
 app.include_router(videos_router, prefix="/api/v1")
+app.include_router(analytics_router, prefix="/api/v1")

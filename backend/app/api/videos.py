@@ -8,9 +8,11 @@ from app.agents.storyboard import StoryboardAgent
 from app.database import get_db
 from app.models import ContentProfile, Idea, Publication, Script, Video, VideoState, transition
 from app.providers.llm import get_llm_provider
+from app.schemas.analytics import MetricOut
 from app.schemas.publication import PublicationOut, ScheduleRequest
 from app.schemas.qa import QAReportOut
 from app.schemas.video import VideoOut
+from app.services.analytics import collect_metrics_for_video
 from app.services.production import produce_video
 from app.services.publishing import publish_video, schedule_video
 from app.services.qa import run_qa
@@ -200,6 +202,25 @@ async def publish_video_endpoint(video_id: int, db: Session = Depends(get_db)) -
 @router.get("/{video_id}/publications", response_model=list[PublicationOut])
 def list_publications(video_id: int, db: Session = Depends(get_db)) -> list[Publication]:
     return db.query(Publication).filter_by(video_id=video_id).order_by(Publication.platform).all()
+
+
+@router.post("/{video_id}/analytics/collect", response_model=list[MetricOut])
+async def collect_analytics(
+    video_id: int, snapshot_label: str = "manual", db: Session = Depends(get_db)
+) -> list[MetricOut]:
+    """Collect one snapshot now for every PUBLISHED platform on this video.
+
+    ponytail: caller-supplied label, triggered on demand -- no Celery beat
+    scheduler wired up to fire this automatically at 1h/6h/24h/48h/7d
+    (spec section 34) yet. Add that once there's a real job scheduler
+    (same gap noted for the rest of the pipeline); an external cron/script
+    calling this endpoint with the right label works in the meantime.
+    """
+    video = db.get(Video, video_id)
+    if video is None:
+        raise HTTPException(status_code=404, detail="video not found")
+    metrics = await collect_metrics_for_video(db, video_id, snapshot_label)
+    return [MetricOut.from_metric(m) for m in metrics]
 
 
 @router.get("", response_model=list[VideoOut])

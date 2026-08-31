@@ -1,3 +1,4 @@
+from app.integrations.analytics import AnalyticsCollector, RawMetrics, get_analytics_collector
 from app.integrations.base import MockPublisher, Publisher, PublishError, PublishResult
 
 PLATFORMS = ("youtube", "instagram", "tiktok")
@@ -15,9 +16,12 @@ def get_publisher(platform: str) -> Publisher:
 
 __all__ = [
     "PLATFORMS",
+    "AnalyticsCollector",
     "MockPublisher",
     "PublishError",
     "PublishResult",
     "Publisher",
+    "RawMetrics",
+    "get_analytics_collector",
     "get_publisher",
 ]

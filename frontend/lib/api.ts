@@ -137,6 +137,37 @@ export interface Publication {
   retry_count: number;
 }
 
+export interface Metric {
+  id: number;
+  publication_id: number;
+  platform: string;
+  snapshot_label: string;
+  collected_at: string;
+  views: number;
+  likes: number;
+  comments: number;
+  shares: number;
+  watch_time_seconds: number | null;
+  retention_rate: number | null;
+  followers_gained: number;
+  engagement_rate: number;
+}
+
+export interface AnalyticsTotals {
+  views: number;
+  likes: number;
+  comments: number;
+  shares: number;
+  followers_gained: number;
+}
+
+export interface VideoAnalytics {
+  video_id: number;
+  title: string | null;
+  metrics: Metric[];
+  totals: AnalyticsTotals;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_URL}${path}`, {
     ...init,
@@ -186,4 +217,11 @@ export const api = {
       body: JSON.stringify({ scheduled_for: scheduledFor }),
     }),
   listPublications: (videoId: number) => request<Publication[]>(`/videos/${videoId}/publications`),
+
+  collectAnalytics: (videoId: number, snapshotLabel = "manual") =>
+    request<Metric[]>(`/videos/${videoId}/analytics/collect?snapshot_label=${snapshotLabel}`, {
+      method: "POST",
+    }),
+  listAnalytics: () => request<VideoAnalytics[]>("/analytics"),
+  getVideoAnalytics: (videoId: number) => request<VideoAnalytics>(`/analytics/videos/${videoId}`),
 };

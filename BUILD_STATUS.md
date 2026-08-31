@@ -401,3 +401,59 @@ schedule → publish; publish-before-approval rejected with 409).
 **Next task:** Phase 7 — analytics: metrics model, platform collectors
 (mocked, same reasoning as publishing), normalized metrics, analytics
 dashboard.
+
+## Phase 7 — Analytics
+
+**Status:** Complete (mocked collectors — same OAuth gap as Phase 6's
+publishers, no real platform account connected)
+
+**Implemented:**
+- `Metric` model: one row per collected snapshot of one `Publication`.
+  Normalized columns (views/likes/comments/shares/watch_time/retention/
+  followers_gained/engagement_rate) are the common schema every platform
+  maps into; `raw` keeps the platform's own payload separately (spec
+  section 33).
+- `AnalyticsCollector` ABC (`app/integrations/analytics.py`) +
+  `MockAnalyticsCollector` (deterministic per-publication fake numbers,
+  no network) as the default for every platform via
+  `get_analytics_collector()`. `YouTubeAnalyticsCollector`,
+  `InstagramInsightsCollector`, `TikTokAnalyticsCollector` exist as real
+  stubs documenting each platform's actual metrics API, raising
+  `NotImplementedError` — identical pattern and identical reason
+  (OAuth) as Phase 6's publishers.
+- `app/services/analytics.py`: `collect_metrics_for_video()` (one
+  snapshot per PUBLISHED platform, `engagement_rate` computed
+  deterministically, not by the collector), `latest_metrics_for_video()`
+  (most recent snapshot per publication), `sum_totals()`.
+- API: `POST /api/v1/videos/{id}/analytics/collect?snapshot_label=...`,
+  `GET /api/v1/analytics`, `GET /api/v1/analytics/videos/{id}`.
+- Frontend: `/analytics` is now a real page (was a Phase-4/5 placeholder)
+  — grand totals, per-video totals, per-platform snapshot list. Video
+  detail page gets a "Collect analytics snapshot" action once `published`.
+- Alembic migration `f425fea336e7`: `metrics` table.
+
+**Tests:** 47 passed, 2 skipped (unrelated Gemini live tests). New:
+`test_analytics.py` (mock collector determinism, one metric per published
+platform, unpublished platforms skipped, latest-snapshot-wins, totals
+math, all three real collectors confirmed `NotImplementedError`) and
+`test_analytics_api.py` (full HTTP flow: publish → collect → per-video
+and overall `/analytics` both reflect it; empty-state video returns zero
+totals, not an error).
+
+**Known limitations:**
+- No automatic scheduled collection at 1h/6h/24h/48h/7d (spec section
+  34) — `/analytics/collect` is triggered on demand (dashboard button, or
+  an external cron hitting the endpoint with the right `snapshot_label`).
+  Real scheduling needs Celery beat, which nothing in this project has
+  wired up yet — same gap as every other "should be a background job"
+  note in this file.
+- No real platform account connected (same reason as Phase 6) — numbers
+  are plausible-looking mock data, not real performance.
+- No correlation/causation analysis (spec section 35, "Question hooks:
+  average retention = X" style comparisons) — that's Phase 8 (Learning),
+  which needs a real history of metrics across many videos to be
+  meaningful; this phase only stores and displays snapshots.
+
+**Next task:** Phase 8 — learning: performance analysis, content pattern
+analysis, strategy generation/storage, content memory (semantic duplicate
+detection).
