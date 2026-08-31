@@ -731,6 +731,23 @@ needs to change.
   scene (see Phase 2's `ponytail:` note in `app/video/captions.py`); real
   per-word timestamps would need Gemini TTS's timing metadata (not
   requested/parsed here) or an ASR pass.
+- **`gemini-2.5-flash-preview-tts` free tier is capped at 10 requests/day**
+  (a hard daily quota, confirmed via a real `429 RESOURCE_EXHAUSTED` —
+  "GenerateRequestsPerDayPerProjectPerModel-FreeTier", not a guess). A
+  7-scene video needs 7 TTS calls; live-testing the integration used up
+  the day's quota after only ~3 scenes of one further render attempt,
+  which failed partway (video correctly ended in `FAILED`, nothing silently
+  wrong — see `produce_video`'s except block). Quota exhaustion doesn't
+  always raise a catchable exception the same way — sometimes it's a
+  request that fails outright (429), other times an empty response with
+  no audio part; `GeminiTTSProvider` now includes `finish_reason` and
+  `prompt_feedback` in its error message to make this distinguishable from
+  an actual content problem. At 7 scenes/video this provider supports at
+  most ~1 real-narration video per day on the free tier — fine for
+  occasional testing, not for any real production volume. A paid tier or
+  batching narration into fewer, longer TTS calls (e.g. one call per
+  video instead of one per scene, then splitting the audio) would fix this;
+  neither is implemented.
 
 **Next task:** none currently assigned. See the "Genuine gaps" list above
 this section (still applicable) plus this addendum's known limitations.

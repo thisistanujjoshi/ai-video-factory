@@ -115,7 +115,16 @@ class GeminiTTSProvider(TTSProvider):
         parts = candidates[0].content.parts if candidates and candidates[0].content else None
         inline_data = parts[0].inline_data if parts else None
         if inline_data is None or inline_data.data is None:
-            raise GeminiTTSError("Gemini returned no audio for this narration")
+            # A quota/rate-limit hit here doesn't always surface as an
+            # exception (unlike a plain 429, which does raise) -- seen in
+            # practice as a silently empty response instead. finish_reason
+            # and prompt_feedback are the two fields worth checking first.
+            finish_reason = candidates[0].finish_reason if candidates else None
+            raise GeminiTTSError(
+                f"Gemini returned no audio for this narration (finish_reason={finish_reason}, "
+                f"prompt_feedback={response.prompt_feedback}) -- often a quota/rate limit "
+                "(free tier: 10 requests/day for this model) rather than a real content issue"
+            )
 
         sample_rate = _parse_pcm_mime_type(inline_data.mime_type or "")
         return _pcm_to_wav(inline_data.data, sample_rate=sample_rate)
