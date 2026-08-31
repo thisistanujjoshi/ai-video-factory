@@ -1,0 +1,15 @@
+Evaluate this short-form video for the content profile "$profile_name"
+(tone: $tone, pacing: $pacing), before it goes to human approval.
+
+Title: $title
+Hook: $hook
+Narration: $narration
+CTA: $cta
+Scene count: $scene_count
+Captions: $captions_preview
+
+Assess hook strength, narrative quality, pacing, visual relevance,
+repetition, ending, caption quality, and platform suitability.
+
+Respond with JSON:
+{"approved": true, "score": 0, "issues": ["..."], "recommendations": ["..."]}

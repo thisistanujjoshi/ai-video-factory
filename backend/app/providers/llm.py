@@ -73,7 +73,26 @@ def _mock_storyboard(count: int) -> dict:
     }
 
 
-_MOCK_GENERATORS = {"ideas": _mock_ideas, "script": _mock_script, "storyboard": _mock_storyboard}
+def _mock_qa(count: int) -> dict:
+    # ponytail: always approves, deliberately. Mock content is bland but
+    # never actually bad, so there's nothing for a content review to catch
+    # here -- the technical checks (app/video/qa_checks.py) are what Phase 3
+    # tests exercise for automatic rejection. A real LLM (Phase 5) will
+    # sometimes disapprove real content; nothing downstream assumes it can't.
+    return {
+        "approved": True,
+        "score": 88,
+        "issues": [],
+        "recommendations": [],
+    }
+
+
+_MOCK_GENERATORS = {
+    "ideas": _mock_ideas,
+    "script": _mock_script,
+    "storyboard": _mock_storyboard,
+    "qa": _mock_qa,
+}
 
 
 class MockLLMProvider(LLMProvider):

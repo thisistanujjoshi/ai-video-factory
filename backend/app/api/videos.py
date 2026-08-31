@@ -5,10 +5,12 @@ from sqlalchemy.orm import Session
 from app.agents.scripts import ScriptAgent
 from app.agents.storyboard import StoryboardAgent
 from app.database import get_db
-from app.models import ContentProfile, Idea, Video, VideoState, transition
+from app.models import ContentProfile, Idea, Script, Video, VideoState, transition
 from app.providers.llm import get_llm_provider
+from app.schemas.qa import QAReportOut
 from app.schemas.video import VideoOut
 from app.services.production import produce_video
+from app.services.qa import run_qa
 
 router = APIRouter(prefix="/videos", tags=["videos"])
 
@@ -72,6 +74,65 @@ async def render_video_endpoint(video_id: int, db: Session = Depends(get_db)) ->
         raise HTTPException(status_code=404, detail="content profile not found")
 
     await produce_video(db, video, profile)
+    db.refresh(video)
+    return video
+
+
+@router.post("/{video_id}/qa", response_model=QAReportOut)
+async def qa_video(video_id: int, db: Session = Depends(get_db)) -> QAReportOut:
+    video = db.get(Video, video_id)
+    if video is None:
+        raise HTTPException(status_code=404, detail="video not found")
+    if video.state != VideoState.RENDERED:
+        raise HTTPException(
+            status_code=409, detail=f"video is in state {video.state.value}, expected rendered"
+        )
+    script = db.get(Script, video.script_id)
+    profile = db.get(ContentProfile, video.content_profile_id)
+    if script is None or profile is None:
+        raise HTTPException(status_code=404, detail="script or content profile not found")
+
+    outcome = await run_qa(db, video, script, profile)
+    return QAReportOut(
+        video=VideoOut.model_validate(video),
+        passed=outcome.passed,
+        technical_issues=outcome.technical.issues,
+        content_score=outcome.content.score,
+        content_approved=outcome.content.approved,
+        content_issues=outcome.content.issues,
+        content_recommendations=outcome.content.recommendations,
+    )
+
+
+@router.post("/{video_id}/regenerate", response_model=VideoOut)
+async def regenerate_video(video_id: int, db: Session = Depends(get_db)) -> Video:
+    """Full-video regeneration: a fresh storyboard, back to storyboard_ready
+    (call /render and /qa again from there).
+
+    ponytail: whole-storyboard regen, not per-scene. Section 23 explicitly
+    wants "don't regenerate the whole video for one bad scene" as the
+    eventual behavior; that needs partial re-render plumbing this MVP
+    doesn't have yet (same gap noted in Phase 2's BUILD_STATUS). Add a
+    scene-scoped variant once QA can point at which scene actually failed.
+    """
+    video = db.get(Video, video_id)
+    if video is None:
+        raise HTTPException(status_code=404, detail="video not found")
+    if video.state != VideoState.QA_FAILED:
+        raise HTTPException(
+            status_code=409, detail=f"video is in state {video.state.value}, expected qa_failed"
+        )
+    script = db.get(Script, video.script_id)
+    profile = db.get(ContentProfile, video.content_profile_id)
+    if script is None or profile is None:
+        raise HTTPException(status_code=404, detail="script or content profile not found")
+
+    transition(video, VideoState.STORYBOARD_GENERATING)
+    video.scenes.clear()
+    await StoryboardAgent(get_llm_provider()).generate(db, script, profile, video)
+    transition(video, VideoState.STORYBOARD_READY)
+
+    db.commit()
     db.refresh(video)
     return video
 

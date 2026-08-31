@@ -157,3 +157,58 @@ ffmpeg installed**, so unlike Phase 0/1's Postgres/Redis/Docker gaps, Phase
 **Next task:** Phase 3 — technical QA checks (file/codec/resolution/
 duration/caption validation), AI QA (LLM content review via the mock
 provider), QA scoring, rejection + regeneration hooks.
+
+## Phase 3 — QA
+
+**Status:** Complete
+
+**Implemented:**
+- Technical QA (`app/video/qa_checks.py`, pure code + `ffprobe`/`ffmpeg`,
+  no LLM): file exists/non-empty, valid container, video+audio streams
+  present, resolution matches the profile, aspect ratio matches (with
+  tolerance), codecs are h264/aac, duration within the profile's
+  min/max (±2s encode-rounding tolerance), every scene has caption text,
+  and a decode pass (`ffmpeg ... -f null -`) to catch corrupt frames.
+- AI QA (`QAAgent`, `app/agents/qa/`): same generate→validate→retry→log
+  pattern as the other agents, reviews hook/narrative/pacing/captions/
+  platform fit, returns `{approved, score, issues, recommendations}`. Mock
+  LLM always approves (score 88) — see the `ponytail:` note in
+  `app/providers/llm.py` for why: there's nothing genuinely bad about
+  canned mock content for a content review to catch, so Phase 3's
+  automatic-rejection tests exercise the *technical* checks instead, which
+  are deterministic and don't depend on LLM behavior.
+- QA orchestration (`app/services/qa.py`): `RENDERED → QA_PENDING →
+  AWAITING_APPROVAL | QA_FAILED`, gated on technical pass AND AI approval
+  AND score ≥ `QA_SCORE_THRESHOLD` (70 — also earmarked for the Phase 9
+  autonomous-publish gate, spec section 52).
+- API: `POST /api/v1/videos/{id}/qa` (409 unless `rendered`), `POST
+  /api/v1/videos/{id}/regenerate` (409 unless `qa_failed`; regenerates the
+  storyboard and returns to `storyboard_ready` — see the `ponytail:` note
+  in `app/api/videos.py` on why this is whole-storyboard, not per-scene,
+  regeneration).
+
+**Tests:** 19 passed, 0 failed. `test_qa_checks.py` builds real MP4s via
+ffmpeg and asserts pass/fail on real `ffprobe` output.
+`test_qa_pipeline.py` drives the full HTTP pipeline twice with different
+profile duration bounds against the same 42s mock render — once
+producing `qa_failed` (bounds exclude 42s) and once `awaiting_approval`
+(bounds include it) — proving automatic rejection is real, not asserted
+in isolation. Also covers regenerate's state-guard and 409s on
+out-of-order calls (`qa` before `render`, `regenerate` when not
+`qa_failed`).
+
+**Known limitations:**
+- No dedicated QA-results table — technical issues and the AI QA verdict
+  are returned in the `/qa` response and logged via the `qa_agent`
+  `AgentRun` row, but not otherwise persisted for later display. Add a
+  table if the Phase 4 dashboard needs to show QA history, not just the
+  latest outcome.
+- Regeneration is whole-storyboard only (see above) — no way yet to
+  identify or redo a single bad scene.
+- No human approve/reject endpoints yet — those are Phase 4 (dashboard +
+  approval UI); `AWAITING_APPROVAL`/`REJECTED`/`APPROVED` states already
+  exist in the state machine (Phase 1) and are exercised by nothing until
+  then.
+
+**Next task:** Phase 4 — dashboard: content profile UI, ideas UI, video
+queue, video preview, approval, regeneration.
