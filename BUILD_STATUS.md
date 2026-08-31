@@ -271,3 +271,73 @@ the existing provider abstractions (mocks stay as the default/fallback).
 Needs API keys from the user to live-test; will implement the interfaces
 and configuration regardless per Rule 1, and mark live-testing status
 honestly.
+
+## Phase 5 — Real AI Providers
+
+**Status:** Partial (LLM live-verified; image implemented, not live-testable
+with the available key; TTS/video providers not started this phase)
+
+**Implemented:**
+- `google-genai>=1.0` added as a backend dependency.
+- `GeminiLLMProvider` (`app/providers/llm.py`): async, uses Gemini's
+  `response_json_schema` for schema-constrained decoding — takes the
+  caller's Pydantic schema unmodified (see ARCHITECTURE.md). Selected via
+  `LLM_PROVIDER=gemini` + `LLM_API_KEY`.
+- `GeminiImageProvider` (`app/providers/image.py`): same SDK, image-capable
+  model. Selected via `IMAGE_PROVIDER=gemini` + `IMAGE_API_KEY`.
+- `generate_structured()` now always passes `response_schema` to whatever
+  provider is configured (mock ignores it, real providers use it) — a
+  one-line change to the shared helper, not per-agent.
+- Mocks are untouched and remain the default — `LLM_PROVIDER`/
+  `IMAGE_PROVIDER` unset behaves exactly as before.
+
+**Live-tested (2026-08-31, real Google AI Studio key, key never committed
+or written to any file — env var only):**
+- `GeminiLLMProvider` — **IMPLEMENTED, LIVE TESTED.** Plain text generation
+  works (~29s on `gemini-flash-lite-latest` first call); schema-constrained
+  JSON generation is fast (1-2s) and round-trips through Pydantic
+  validation correctly, including against our actual nested schemas
+  (`GeneratedIdeaList` with `$defs`, `ge`/`le` constraints). The full
+  idea→script→storyboard→QA pipeline was run against the real API directly
+  (`test_gemini_e2e_pipeline.py`) and passed in ~9s.
+  - Model note: `gemini-2.5-flash` returned 404 ("no longer available to
+    new users") on this key/date; `gemini-3.6-flash` (the API's own
+    suggested replacement) worked for plain text (~29s) but consistently
+    timed out (504/499) on schema-constrained requests even at 55s+.
+    `gemini-flash-lite-latest` is fast and reliable for both — that's the
+    default `model_name`. If this regresses, re-run
+    `client.models.list()` to see what's current; don't assume model names
+    from any point in time stay valid.
+- `GeminiImageProvider` — **IMPLEMENTED, NOT LIVE TESTED.** A real call to
+  `gemini-3.1-flash-image` returned `429 RESOURCE_EXHAUSTED`: "Quota
+  exceeded ... limit: 0" for every free-tier image-generation metric on
+  this key. This is a confirmed account/tier limitation, not a guessed
+  one — the code path is implemented per Rule 1 but unverified end-to-end.
+  Re-test once a key with image quota (paid tier, or a different project)
+  is available.
+
+**Tests:** 25 passed, 2 skipped (`test_gemini_provider.py`,
+`test_gemini_e2e_pipeline.py` — both skip via `pytest.mark.skipif` when
+`GEMINI_API_KEY` isn't in the environment, so CI/normal runs are
+unaffected). Both passed live. `test_generate_structured.py` added to
+cover the `response_schema`-passing and retry-on-malformed-JSON behavior
+directly (previously only exercised indirectly through mock-based agent
+tests). Ruff/black/mypy clean.
+
+**Known limitations:**
+- TTS and Video providers: interfaces exist (`TTSProvider` since Phase 2),
+  no real implementation yet — deferred, not attempted this pass (the user
+  chose to scope Phase 5 to LLM + image with the one key available; TTS
+  needs a different vendor).
+- `GeminiImageProvider` doesn't request a specific resolution (the
+  `generate_content` image API doesn't expose width/height the way the
+  mock does) — relies on the renderer's existing scale step, untested
+  against a real non-matching-aspect-ratio image (see the `ponytail:` note
+  in `app/providers/image.py`).
+- No provider fallback chain (spec section 39: primary → fallback on
+  failure) — still just a single configured provider, mock or real.
+
+**Next task:** Phase 6 — publishing (Publisher interface, YouTube/
+Instagram/TikTok integrations, scheduling). Real platform credentials
+needed for live testing; will implement interfaces + mocked integration
+tests regardless per Rule 1.

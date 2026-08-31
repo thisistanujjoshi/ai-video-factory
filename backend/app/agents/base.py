@@ -39,7 +39,11 @@ async def generate_structured[T: BaseModel](
     parsed: T | None = None
 
     for attempt in range(retries + 1):
-        raw = await llm.generate(prompt, **llm_kwargs)
+        # response_schema is offered to every provider; a real one (e.g. Gemini)
+        # uses it for schema-constrained decoding, the mock ignores it via **kwargs.
+        raw = await llm.generate(
+            prompt, response_schema=response_model.model_json_schema(), **llm_kwargs
+        )
         try:
             parsed = response_model.model_validate_json(raw)
             break

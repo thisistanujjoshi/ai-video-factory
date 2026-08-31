@@ -12,8 +12,18 @@ class LLMProvider(ABC):
     model_name: str = "unknown"
 
     @abstractmethod
-    async def generate(self, prompt: str, *, temperature: float = 0.7, **kwargs: Any) -> str:
-        """Return raw text output (JSON when the caller needs structured data)."""
+    async def generate(
+        self,
+        prompt: str,
+        *,
+        temperature: float = 0.7,
+        response_schema: dict | None = None,
+        **kwargs: Any,
+    ) -> str:
+        """Return raw text output. When `response_schema` (a Pydantic
+        `.model_json_schema()` dict) is given, a provider that supports
+        schema-constrained decoding should use it; one that doesn't can
+        ignore it and rely on the prompt alone."""
 
 
 def _mock_ideas(count: int) -> dict:
@@ -109,6 +119,7 @@ class MockLLMProvider(LLMProvider):
         prompt: str,
         *,
         temperature: float = 0.7,
+        response_schema: dict | None = None,
         mode: str = "text",
         count: int = 1,
         **kwargs: Any,
@@ -119,10 +130,55 @@ class MockLLMProvider(LLMProvider):
         return json.dumps(generator(count))
 
 
+class GeminiLLMProvider(LLMProvider):
+    """Google Gemini (via the `google-genai` SDK). Uses `response_json_schema`
+    for schema-constrained decoding when the caller supplies one -- Gemini
+    supports the Pydantic-shaped subset of JSON Schema directly ($defs/$ref,
+    minimum/maximum, etc.), so `response_model.model_json_schema()` is passed
+    through unmodified rather than translated into the SDK's own `Schema` type.
+
+    Verified live 2026-08-31 against `gemini-flash-lite-latest`: plain text
+    (~29s) and schema-constrained JSON (~1-2s, correctly structured, round
+    trips through Pydantic `.model_validate_json()`) both work.
+    """
+
+    model_name = "gemini-flash-lite-latest"
+
+    def __init__(self, api_key: str, model: str | None = None):
+        from google import genai
+
+        self._client = genai.Client(api_key=api_key)
+        if model:
+            self.model_name = model
+
+    async def generate(
+        self,
+        prompt: str,
+        *,
+        temperature: float = 0.7,
+        response_schema: dict | None = None,
+        **kwargs: Any,
+    ) -> str:
+        from google.genai import types
+
+        config = types.GenerateContentConfig(
+            temperature=temperature,
+            response_mime_type="application/json" if response_schema else None,
+            response_json_schema=response_schema,
+        )
+        response = await self._client.aio.models.generate_content(
+            model=self.model_name, contents=prompt, config=config
+        )
+        return response.text or ""
+
+
 def get_llm_provider() -> LLMProvider:
-    provider = get_settings().llm_provider or "mock"
+    settings = get_settings()
+    provider = settings.llm_provider or "mock"
     if provider == "mock":
         return MockLLMProvider()
-    raise ValueError(
-        f"LLM provider {provider!r} is not implemented yet (real providers land in Phase 5)"
-    )
+    if provider == "gemini":
+        if not settings.llm_api_key:
+            raise ValueError("LLM_API_KEY is required when LLM_PROVIDER=gemini")
+        return GeminiLLMProvider(settings.llm_api_key)
+    raise ValueError(f"LLM provider {provider!r} is not implemented (mock, gemini are available)")

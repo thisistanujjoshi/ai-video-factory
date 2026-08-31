@@ -25,10 +25,19 @@ model with stages to resume).
 
 Nothing calls a specific AI vendor directly. `app/providers/` defines
 interfaces (`LLMProvider`, `ImageProvider`, `VideoProvider`, `TTSProvider`);
-concrete implementations (mock, then real vendors) are selected via env vars
-(`LLM_PROVIDER`, etc.) in Phase 5. Mock providers ship first so the whole
-pipeline is testable without API keys or spend — real providers are added
-without touching call sites.
+concrete implementations are selected via env vars (`LLM_PROVIDER`, etc.),
+unset/`mock` by default. Mock providers shipped first (Phases 1-2) so the
+whole pipeline was testable without API keys or spend before any real
+vendor existed — real providers are added without touching call sites.
+`GeminiLLMProvider` and `GeminiImageProvider` (Phase 5, `app/providers/
+llm.py` / `image.py`) are the first real implementations, both using
+Google's `google-genai` SDK. Structured output doesn't go through a
+vendor-specific schema type: `generate_structured()`
+(`app/agents/base.py`) hands every provider the caller's Pydantic
+`response_model.model_json_schema()` as-is via a `response_schema` kwarg —
+Gemini's `response_json_schema` accepts the Pydantic-shaped JSON Schema
+subset ($defs/$ref, minimum/maximum, etc.) directly, so no translation
+layer was needed; a provider that can't use it just ignores the kwarg.
 
 ## State machine
 
