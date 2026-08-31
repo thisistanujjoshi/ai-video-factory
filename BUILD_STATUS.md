@@ -670,3 +670,67 @@ user-driven review of this file surfaced: no `ResearchAgent` (Phase 1),
 missing docs (`DATABASE.md`, `AGENTS.md`, `VIDEO_PIPELINE.md`,
 `PUBLISHING.md`, `ANALYTICS.md`, `DEPLOYMENT.md`, `API.md`,
 `OPERATIONS.md`), and no documented security review pass.
+
+## Phase 5 addendum — Real TTS provider
+
+**Status:** Complete, live-tested
+
+**Implemented:**
+- `GeminiTTSProvider` (`app/providers/tts.py`): real narrated speech via
+  `gemini-2.5-flash-preview-tts`. Gemini returns raw 16-bit mono PCM
+  (`audio/L16;codec=pcm;rate=24000`, parsed from the response's
+  `mime_type` rather than hardcoded), wrapped into a proper WAV container
+  with the stdlib `wave` module — no new dependency. Selected via
+  `TTS_PROVIDER=gemini` + `TTS_API_KEY`.
+- **Real narration doesn't land on the storyboard's guessed
+  `duration_seconds`** — a real sentence takes however long it takes to
+  say, unlike the mock's silence which hits any requested length exactly.
+  `produce_video()` now measures each scene's actual generated audio
+  duration (`_wav_duration_seconds`, stdlib `wave`) and retimes the scene
+  to it before building captions and rendering, so the SRT and the video
+  clip stay in sync with what's actually playing instead of drifting from
+  an LLM's duration estimate. This applies uniformly to both providers;
+  it's a no-op for the mock since silence already matches the request.
+- **Live-tested** 2026-08-31: a real call synthesized "No body was ever
+  found." in ~3s; confirmed real (non-silent, correctly-shaped mono
+  16-bit) audio via `wave` inspection, both as an isolated provider call
+  and via `pytest` (`test_gemini_tts.py`, skipped without `GEMINI_API_KEY`).
+
+**A real test-isolation bug, found and fixed the same way as Phase 9's**
+(via live use, not just the test suite): once a real `backend/.env` with
+`TTS_PROVIDER=gemini` existed for manual testing, the *entire* pytest
+suite silently started making real Gemini API calls instead of using
+mocks — `pydantic-settings` reads `backend/.env` from the working
+directory regardless of whether it's a real run or a test run, and nothing
+was overriding that for tests. 17 tests failed from real API errors
+(mostly rate-limiting) before the fix. Fixed in `tests/conftest.py`:
+force `LLM_PROVIDER`/`IMAGE_PROVIDER`/`TTS_PROVIDER`/`EMBEDDING_PROVIDER`
+to `mock` for the whole test session, before any app module import (since
+`get_settings()` is `@lru_cache`'d and several modules call it at import
+time). The dedicated live-gated tests (`test_gemini_*.py`) are unaffected
+— they instantiate their provider directly from `GEMINI_API_KEY`, bypassing
+`get_settings()` entirely. This is a real hazard for anyone else who adds
+a local `.env` for manual testing on this project; worth knowing about.
+
+**On secret handling this pass:** the API key was, twice, nearly exposed
+in this conversation — once by being typed directly in chat instead of
+via a private channel, and once by this assistant using `Read` on
+`backend/.env` (which printed the key line into the transcript) instead
+of editing the non-secret `TTS_PROVIDER` line blindly with `sed`. Both
+times the user was told to rotate the key. If you're reading this later:
+treat any key that has appeared in this project's chat history as
+burned, and never `Read`/`cat` a `.env` file that holds a live secret —
+edit it blindly (`sed`, or a targeted regex) when only a non-secret field
+needs to change.
+
+**Known limitations:**
+- Single fixed voice (`Kore`) — not configurable per content profile yet;
+  `profile.style.narration` (e.g. "dramatic") isn't mapped to a voice
+  choice. Straightforward to add once it matters.
+- No word-level caption timing from TTS — captions are still one cue per
+  scene (see Phase 2's `ponytail:` note in `app/video/captions.py`); real
+  per-word timestamps would need Gemini TTS's timing metadata (not
+  requested/parsed here) or an ASR pass.
+
+**Next task:** none currently assigned. See the "Genuine gaps" list above
+this section (still applicable) plus this addendum's known limitations.

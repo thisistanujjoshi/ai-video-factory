@@ -1,4 +1,6 @@
+import io
 import tempfile
+import wave
 from pathlib import Path
 
 from sqlalchemy.orm import Session
@@ -15,6 +17,16 @@ from app.video.renderer import SceneRenderInput, render_video
 # per Rule 4 (deterministic, provider- and ffmpeg-driven), so it doesn't
 # belong in app/agents alongside the LLM-calling idea/script/storyboard
 # agents even though the spec's directory sketch put "production" there.
+
+
+def _wav_duration_seconds(wav_bytes: bytes) -> float:
+    """The storyboard's `duration_seconds` is a plan, not a guarantee --
+    the mock TTS hits it exactly (it's silence), but real narration runs
+    however long the sentence takes to say. Scenes get retimed to the
+    actual voiceover length so captions and the render stay in sync with
+    what's actually playing, rather than drifting from an LLM's guess."""
+    with wave.open(io.BytesIO(wav_bytes)) as wav_file:
+        return wav_file.getnframes() / wav_file.getframerate()
 
 
 async def produce_video(db: Session, video: Video, profile: ContentProfile) -> None:
@@ -54,6 +66,9 @@ async def produce_video(db: Session, video: Video, profile: ContentProfile) -> N
                 audio_bytes = await tts_provider.generate_voiceover(
                     scene.narration, duration_seconds=scene.duration_seconds
                 )
+                actual_duration = _wav_duration_seconds(audio_bytes)
+                scene.duration_seconds = actual_duration  # retime to the real voiceover length
+
                 audio_path = await storage.upload(
                     f"videos/{video.id}/scenes/{scene.scene_number}/voiceover.wav", audio_bytes
                 )
@@ -64,7 +79,7 @@ async def produce_video(db: Session, video: Video, profile: ContentProfile) -> N
                         kind="voiceover",
                         provider=type(tts_provider).__name__,
                         path=audio_path,
-                        duration_seconds=scene.duration_seconds,
+                        duration_seconds=actual_duration,
                     )
                 )
 
@@ -72,7 +87,7 @@ async def produce_video(db: Session, video: Video, profile: ContentProfile) -> N
                     SceneRenderInput(
                         image_path=Path(image_path),
                         audio_path=Path(audio_path),
-                        duration_seconds=scene.duration_seconds,
+                        duration_seconds=actual_duration,
                     )
                 )
 
