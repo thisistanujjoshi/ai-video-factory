@@ -1,9 +1,11 @@
 "use client";
 
 import { use, useCallback, useEffect, useState } from "react";
-import { api, type QAReport, type Video } from "@/lib/api";
-import { button, buttonDanger, card } from "@/lib/ui";
+import { api, type Publication, type QAReport, type Video } from "@/lib/api";
+import { button, buttonDanger, card, input } from "@/lib/ui";
 import { StateBadge } from "@/components/StateBadge";
+
+const NO_ACTION_STATES = ["draft", "idea_selected", "published", "rejected", "failed"];
 
 export default function VideoDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -11,11 +13,14 @@ export default function VideoDetailPage({ params }: { params: Promise<{ id: stri
 
   const [video, setVideo] = useState<Video | null>(null);
   const [qaReport, setQaReport] = useState<QAReport | null>(null);
+  const [publications, setPublications] = useState<Publication[]>([]);
+  const [scheduledFor, setScheduledFor] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const refresh = useCallback(() => {
     api.getVideo(videoId).then(setVideo).catch((e) => setError(String(e)));
+    api.listPublications(videoId).then(setPublications).catch(() => {});
   }, [videoId]);
 
   useEffect(() => {
@@ -48,7 +53,7 @@ export default function VideoDetailPage({ params }: { params: Promise<{ id: stri
       </div>
       {error && <p className="text-sm text-red-400">{error}</p>}
 
-      <div className={`${card} flex flex-wrap gap-3`}>
+      <div className={`${card} flex flex-wrap items-center gap-3`}>
         {video.state === "storyboard_ready" && (
           <button disabled={busy} className={button} onClick={() => run(() => api.renderVideo(video.id))}>
             Render
@@ -86,7 +91,32 @@ export default function VideoDetailPage({ params }: { params: Promise<{ id: stri
             </button>
           </>
         )}
-        {["draft", "idea_selected", "published", "approved", "rejected", "failed"].includes(video.state) && (
+        {video.state === "approved" && (
+          <>
+            <button disabled={busy} className={button} onClick={() => run(() => api.publishVideo(video.id))}>
+              Publish now
+            </button>
+            <input
+              type="datetime-local"
+              className={`${input} w-56`}
+              value={scheduledFor}
+              onChange={(e) => setScheduledFor(e.target.value)}
+            />
+            <button
+              disabled={busy || !scheduledFor}
+              className={button}
+              onClick={() => run(() => api.scheduleVideo(video.id, new Date(scheduledFor).toISOString()))}
+            >
+              Schedule
+            </button>
+          </>
+        )}
+        {video.state === "scheduled" && (
+          <button disabled={busy} className={button} onClick={() => run(() => api.publishVideo(video.id))}>
+            Publish now
+          </button>
+        )}
+        {NO_ACTION_STATES.includes(video.state) && (
           <span className="text-sm text-neutral-500">No action available in this state.</span>
         )}
       </div>
@@ -117,6 +147,21 @@ export default function VideoDetailPage({ params }: { params: Promise<{ id: stri
               </ul>
             </div>
           )}
+        </div>
+      )}
+
+      {publications.length > 0 && (
+        <div className={card}>
+          <h2 className="mb-2 font-medium">Publications</h2>
+          <ul className="divide-y divide-neutral-800">
+            {publications.map((pub) => (
+              <li key={pub.id} className="flex items-center justify-between py-2 text-sm">
+                <span className="capitalize">{pub.platform}</span>
+                <span className="text-neutral-400">{pub.status}</span>
+                <span className="truncate text-neutral-500">{pub.platform_ref ?? pub.error ?? "—"}</span>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
 

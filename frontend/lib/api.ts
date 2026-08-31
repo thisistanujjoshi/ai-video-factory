@@ -122,6 +122,21 @@ export interface QAReport {
   content_recommendations: string[];
 }
 
+export type PublicationStatus = "pending" | "scheduled" | "publishing" | "published" | "failed";
+
+export interface Publication {
+  id: number;
+  video_id: number;
+  platform: string;
+  status: PublicationStatus;
+  platform_metadata: Record<string, unknown>;
+  scheduled_for: string | null;
+  published_at: string | null;
+  platform_ref: string | null;
+  error: string | null;
+  retry_count: number;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_URL}${path}`, {
     ...init,
@@ -163,4 +178,12 @@ export const api = {
   regenerateVideo: (id: number) => request<Video>(`/videos/${id}/regenerate`, { method: "POST" }),
   approveVideo: (id: number) => request<Video>(`/videos/${id}/approve`, { method: "POST" }),
   rejectVideo: (id: number) => request<Video>(`/videos/${id}/reject`, { method: "POST" }),
+
+  publishVideo: (id: number) => request<Publication[]>(`/videos/${id}/publish`, { method: "POST" }),
+  scheduleVideo: (id: number, scheduledFor: string) =>
+    request<Publication[]>(`/videos/${id}/schedule`, {
+      method: "POST",
+      body: JSON.stringify({ scheduled_for: scheduledFor }),
+    }),
+  listPublications: (videoId: number) => request<Publication[]>(`/videos/${videoId}/publications`),
 };

@@ -6,11 +6,13 @@ from sqlalchemy.orm import Session
 from app.agents.scripts import ScriptAgent
 from app.agents.storyboard import StoryboardAgent
 from app.database import get_db
-from app.models import ContentProfile, Idea, Script, Video, VideoState, transition
+from app.models import ContentProfile, Idea, Publication, Script, Video, VideoState, transition
 from app.providers.llm import get_llm_provider
+from app.schemas.publication import PublicationOut, ScheduleRequest
 from app.schemas.qa import QAReportOut
 from app.schemas.video import VideoOut
 from app.services.production import produce_video
+from app.services.publishing import publish_video, schedule_video
 from app.services.qa import run_qa
 
 router = APIRouter(prefix="/videos", tags=["videos"])
@@ -22,6 +24,23 @@ def _require_state(video: Video, expected: VideoState) -> None:
             status_code=409,
             detail=f"video is in state {video.state.value}, expected {expected.value}",
         )
+
+
+def _require_state_in(video: Video, expected: set[VideoState]) -> None:
+    if video.state not in expected:
+        names = ", ".join(s.value for s in expected)
+        raise HTTPException(
+            status_code=409,
+            detail=f"video is in state {video.state.value}, expected one of {names}",
+        )
+
+
+def _get_script_and_profile(db: Session, video: Video) -> tuple[Script, ContentProfile]:
+    script = db.get(Script, video.script_id)
+    profile = db.get(ContentProfile, video.content_profile_id)
+    if script is None or profile is None:
+        raise HTTPException(status_code=404, detail="script or content profile not found")
+    return script, profile
 
 
 class VideoGenerateRequest(BaseModel):
@@ -89,10 +108,7 @@ async def qa_video(video_id: int, db: Session = Depends(get_db)) -> QAReportOut:
     if video is None:
         raise HTTPException(status_code=404, detail="video not found")
     _require_state(video, VideoState.RENDERED)
-    script = db.get(Script, video.script_id)
-    profile = db.get(ContentProfile, video.content_profile_id)
-    if script is None or profile is None:
-        raise HTTPException(status_code=404, detail="script or content profile not found")
+    script, profile = _get_script_and_profile(db, video)
 
     outcome = await run_qa(db, video, script, profile)
     return QAReportOut(
@@ -121,10 +137,7 @@ async def regenerate_video(video_id: int, db: Session = Depends(get_db)) -> Vide
     if video is None:
         raise HTTPException(status_code=404, detail="video not found")
     _require_state(video, VideoState.QA_FAILED)
-    script = db.get(Script, video.script_id)
-    profile = db.get(ContentProfile, video.content_profile_id)
-    if script is None or profile is None:
-        raise HTTPException(status_code=404, detail="script or content profile not found")
+    script, profile = _get_script_and_profile(db, video)
 
     transition(video, VideoState.STORYBOARD_GENERATING)
     video.scenes.clear()
@@ -158,6 +171,35 @@ def reject_video(video_id: int, db: Session = Depends(get_db)) -> Video:
     db.commit()
     db.refresh(video)
     return video
+
+
+@router.post("/{video_id}/schedule", response_model=list[PublicationOut])
+async def schedule_video_endpoint(
+    video_id: int, payload: ScheduleRequest, db: Session = Depends(get_db)
+) -> list[Publication]:
+    video = db.get(Video, video_id)
+    if video is None:
+        raise HTTPException(status_code=404, detail="video not found")
+    _require_state(video, VideoState.APPROVED)
+    script, profile = _get_script_and_profile(db, video)
+
+    return await schedule_video(db, video, profile, script, payload.scheduled_for)
+
+
+@router.post("/{video_id}/publish", response_model=list[PublicationOut])
+async def publish_video_endpoint(video_id: int, db: Session = Depends(get_db)) -> list[Publication]:
+    video = db.get(Video, video_id)
+    if video is None:
+        raise HTTPException(status_code=404, detail="video not found")
+    _require_state_in(video, {VideoState.APPROVED, VideoState.SCHEDULED})
+    script, profile = _get_script_and_profile(db, video)
+
+    return await publish_video(db, video, profile, script)
+
+
+@router.get("/{video_id}/publications", response_model=list[PublicationOut])
+def list_publications(video_id: int, db: Session = Depends(get_db)) -> list[Publication]:
+    return db.query(Publication).filter_by(video_id=video_id).order_by(Publication.platform).all()
 
 
 @router.get("", response_model=list[VideoOut])

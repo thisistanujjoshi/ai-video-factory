@@ -341,3 +341,63 @@ tests). Ruff/black/mypy clean.
 Instagram/TikTok integrations, scheduling). Real platform credentials
 needed for live testing; will implement interfaces + mocked integration
 tests regardless per Rule 1.
+
+## Phase 6 — Publishing
+
+**Status:** Complete (interfaces + mock; real platform APIs are
+documented stubs — no OAuth credentials available, per Rule 1)
+
+**Implemented:**
+- `Publication` model (`video_id`+`platform` unique — idempotent by
+  construction, spec section 58) with `PublicationStatus` enum, per-
+  platform metadata JSON, scheduling/publish timestamps, `platform_ref`,
+  error, retry_count.
+- `Publisher` ABC (`app/integrations/base.py`): `publish`/`schedule`/
+  `get_status`. `MockPublisher` is the default for every platform via
+  `get_publisher()` — realistic async behavior, and a `fail_times` knob
+  used to test the retry path without a real flaky API.
+- `YouTubePublisher`, `InstagramPublisher`, `TikTokPublisher`
+  (`app/integrations/{youtube,instagram,tiktok}/`): real classes exist,
+  each documents the actual upload flow for that platform (YouTube
+  resumable `videos.insert`; Instagram Graph API container→publish;
+  TikTok Content Posting API init→upload→poll) and raises
+  `NotImplementedError` — every one needs an interactive OAuth consent
+  flow this backend has no UI for, which the `client_id`/`client_secret`
+  pair alone (from `.env`) can't substitute for. Swapping one in is a
+  one-line change in `get_publisher()`.
+- `app/services/publishing.py`: `build_platform_metadata()` (deterministic
+  — packages existing script/idea content into YouTube's title/
+  description/tags vs. Instagram/TikTok's caption/hashtags shape, not an
+  LLM call, see its docstring for why), `publish_video()` and
+  `schedule_video()` — both idempotent per platform, `publish_video()`
+  retries transient failures with real (if short) exponential backoff
+  before marking a platform `FAILED`.
+- API: `POST /api/v1/videos/{id}/schedule`, `POST /api/v1/videos/{id}/
+  publish`, `GET /api/v1/videos/{id}/publications`.
+- Alembic migration `9db6640f6afb`: `publications` table.
+
+**Tests:** 37 passed, 2 skipped (unrelated Gemini live tests). New:
+`test_publishing.py` (metadata shape, idempotency, retry-then-succeed,
+retry-exhaustion→FAILED, scheduling, and all three real publishers
+confirmed to raise `NotImplementedError`) and `test_publishing_api.py`
+(full HTTP flow: approve → publish → 3 platforms published; approve →
+schedule → publish; publish-before-approval rejected with 409).
+
+**Known limitations:**
+- No real platform integration is live — all three need an OAuth consent
+  UI this project doesn't have yet. This was a scoping choice (Phase 5's
+  one available key doesn't cover any of these platforms), not an
+  oversight; the interfaces are real and ready for whoever builds that
+  flow.
+- Publishing runs synchronously in the request handler, same tradeoff as
+  every other pipeline step so far — becomes a real Celery job once a
+  real publisher's upload latency (and the need to actually fire at a
+  scheduled time, not just record one) makes that necessary.
+- Video-level state is PUBLISHED/FAILED as an aggregate across platforms;
+  a partial failure (2 of 3 platforms succeed) marks the video FAILED
+  even though the successful `Publication` rows stay PUBLISHED and are
+  not retried. Query `/publications` for the real per-platform picture.
+
+**Next task:** Phase 7 — analytics: metrics model, platform collectors
+(mocked, same reasoning as publishing), normalized metrics, analytics
+dashboard.
