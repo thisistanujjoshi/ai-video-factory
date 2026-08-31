@@ -614,3 +614,59 @@ the loop's autonomous closure (step 22, "future idea generation uses the
 updated strategy") demonstrated directly in Phase 8's
 `test_strategy_integration.py` and now driven end-to-end without human
 intervention for `AUTONOMOUS` profiles in this phase.
+
+## Phase 10 — Scheduler
+
+**Status:** Complete
+
+**Implemented:**
+- Closes the gap this file has flagged since Phase 7: `schedule.
+  videos_per_day` existed on `ContentProfile` but nothing read it, and
+  autonomous mode only ran when the API endpoint was hit by hand.
+- `app/services/scheduler.py`: `videos_needed_today()` counts videos
+  already produced today per profile (any state — a failed attempt still
+  used its slot) against `schedule.videos_per_day`; `profiles_due_for_
+  cycle()` returns every non-`MANUAL` profile still under quota.
+- `app/workers/scheduler.py`: `check_schedules` (Celery-beat-triggered,
+  every 15 minutes — see `celery_app.py`) finds due profiles and
+  enqueues one `run_profile_cycle` task per profile, so profiles due at
+  the same tick run as independent, parallel Celery tasks rather than
+  serially inside one long task. `run_profile_cycle` runs the existing
+  `run_autonomous_cycle()` and swallows the two expected/unattended
+  outcomes (mode flipped to manual since enqueued; dedup rejected every
+  idea this cycle) instead of letting Celery retry into the same result.
+- `docker-compose.yml`: new `beat` service, same pattern as `worker`.
+
+**Tests:** 8 new (`test_scheduler.py`): quota counting (zero videos,
+today-only counting, never-negative), due-profile selection (skips
+`MANUAL`, includes `SEMI_AUTOMATIC`, skips quota-already-met), and
+`check_schedules` enqueuing exactly one task per due profile (real
+Celery task object, `.delay` mocked — no broker needed to run the suite).
+84 passed, 2 skipped (unrelated Gemini live tests) across the whole repo.
+
+**Verified live** against a real Redis broker and a real Celery worker
+(not just the test suite, per this project's own standing rule): created
+a profile with an unmet quota, called `check_schedules.delay()`, watched
+it correctly return `[profile_id]` and the worker log show
+`run_profile_cycle` received and executed — it ran the actual
+`run_autonomous_cycle()` pipeline for real (failing only on an unrelated,
+concurrently-in-progress TTS provider change in `.env`, not on anything
+in this phase).
+
+**Known limitations:**
+- `"today"` is a fixed UTC day, not the profile's own local time —
+  `schedule` has no `timezone` field yet (that belongs with the Phase 6
+  publishing scheduler's `posting_windows`, not this one). Add
+  `schedule.timezone` and use it in `videos_needed_today` if profiles
+  ever need midnight-local resets.
+- No `posting_windows` — a due profile's cycle can be enqueued at any
+  point in the 15-minute beat tick, not pinned to specific times of day.
+- Retries/backoff for `run_profile_cycle` on transient errors (a real
+  provider timeout, not the two expected exceptions) rely on Celery's
+  defaults — nothing in this phase configures per-task retry policy.
+
+**Next task:** none currently assigned — see the "Genuine gaps" list a
+user-driven review of this file surfaced: no `ResearchAgent` (Phase 1),
+missing docs (`DATABASE.md`, `AGENTS.md`, `VIDEO_PIPELINE.md`,
+`PUBLISHING.md`, `ANALYTICS.md`, `DEPLOYMENT.md`, `API.md`,
+`OPERATIONS.md`), and no documented security review pass.
