@@ -101,3 +101,59 @@ mypy all clean.
 **Next task:** Phase 2 — asset provider abstraction + mock, TTS abstraction
 + mock, captions, FFmpeg rendering, video model additions for the render
 pipeline.
+
+## Phase 2 — Production
+
+**Status:** Complete
+
+**Implemented:**
+- `StorageProvider` abstraction (`app/storage/`) + `LocalStorageProvider`
+  (dev implementation, writes under `storage/`, gitignored).
+- `ImageProvider`/`MockImageProvider` (`app/providers/image.py`) — a
+  solid-color PNG per scene via ffmpeg's `lavfi` color source, colored
+  deterministically from the scene's `visual_prompt` text. No image-gen API
+  key, no new dependency.
+- `TTSProvider`/`MockTTSProvider` (`app/providers/tts.py`) — silent WAV of
+  the scene's exact `duration_seconds` via ffmpeg's `anullsrc`. No TTS API
+  key, no new dependency.
+- `Asset` / `AudioAsset` models, one row per generated scene image /
+  voiceover, with provider/source/path recorded.
+- Captions (`app/video/captions.py`): SRT built directly from each scene's
+  known caption text + duration — no ASR step (see the `ponytail:` note
+  there for why that's the correct simplification here, not a shortcut).
+- Renderer (`app/video/renderer.py`): per-scene ffmpeg encode → concat →
+  caption burn-in → final MP4, `libopenh264`/`aac`, target resolution from
+  the content profile. Pure deterministic code, zero LLM calls.
+- `produce_video` service (`app/services/production.py`) orchestrates the
+  above: ASSETS_GENERATING → ASSETS_READY → RENDERING → RENDERED (or
+  FAILED on any error, with rollback).
+- API: `POST /api/v1/videos/{id}/render` (409 if the video isn't
+  `storyboard_ready`).
+- Alembic migration `ba1d88ad72fb`: `assets`, `audio_assets` tables,
+  `videos.rendered_path` column.
+
+**Tests:** 12 passed, 0 failed. Notably — **this environment has real
+ffmpeg installed**, so unlike Phase 0/1's Postgres/Redis/Docker gaps, Phase
+2's core acceptance criterion is verified for real, not just structurally:
+- `test_renderer.py`: renders two synthetic scenes end-to-end, `ffprobe`
+  confirms a real H.264/AAC MP4 with the requested duration.
+- `test_production_pipeline.py`: drives the full HTTP API (content profile
+  → ideas → video → storyboard → render) and `ffprobe`s the actual output
+  file the API reports; also checked manually — a 7-scene render produced a
+  320x568 h264/aac MP4, ~42s duration (7 × 6s scenes), exactly as expected.
+
+**Known limitations:**
+- No `libx264` in this ffmpeg build (see `docs/ARCHITECTURE.md`) — using
+  `libopenh264` instead. Works, but re-verify encoder choice if deploying
+  to an environment with different ffmpeg codec support.
+- Rendering runs synchronously in the request handler, same tradeoff noted
+  in Phase 1 for `/videos/generate` — becomes a real problem once assets
+  are large/slow (real image/TTS providers) or scenes need to render in
+  parallel; that's when this moves to a Celery job (spec section 24).
+- No resume-from-last-completed-scene on failure yet (spec section 57) —
+  a failed render currently rolls back and marks the whole video FAILED.
+  Worth adding once retries on partial failures are actually observed.
+
+**Next task:** Phase 3 — technical QA checks (file/codec/resolution/
+duration/caption validation), AI QA (LLM content review via the mock
+provider), QA scoring, rejection + regeneration hooks.

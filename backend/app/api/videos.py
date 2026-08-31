@@ -8,6 +8,7 @@ from app.database import get_db
 from app.models import ContentProfile, Idea, Video, VideoState, transition
 from app.providers.llm import get_llm_provider
 from app.schemas.video import VideoOut
+from app.services.production import produce_video
 
 router = APIRouter(prefix="/videos", tags=["videos"])
 
@@ -52,6 +53,25 @@ async def generate_video(payload: VideoGenerateRequest, db: Session = Depends(ge
     transition(video, VideoState.STORYBOARD_READY)
 
     db.commit()
+    db.refresh(video)
+    return video
+
+
+@router.post("/{video_id}/render", response_model=VideoOut)
+async def render_video_endpoint(video_id: int, db: Session = Depends(get_db)) -> Video:
+    video = db.get(Video, video_id)
+    if video is None:
+        raise HTTPException(status_code=404, detail="video not found")
+    if video.state != VideoState.STORYBOARD_READY:
+        raise HTTPException(
+            status_code=409,
+            detail=f"video is in state {video.state.value}, expected storyboard_ready",
+        )
+    profile = db.get(ContentProfile, video.content_profile_id)
+    if profile is None:
+        raise HTTPException(status_code=404, detail="content profile not found")
+
+    await produce_video(db, video, profile)
     db.refresh(video)
     return video
 

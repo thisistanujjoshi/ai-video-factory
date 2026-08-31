@@ -22,5 +22,6 @@ class VideoOut(BaseModel):
     script_id: int | None
     state: VideoState
     title: str | None
+    rendered_path: str | None
     scenes: list[SceneOut] = []
     model_config = ConfigDict(from_attributes=True)

@@ -50,6 +50,19 @@ real AI providers → publishing → analytics → learning → autonomous mode.
 Each phase produces working, tested software; nothing later is assumed to
 exist yet. See `BUILD_STATUS.md` for what's actually done vs. planned.
 
+## Video rendering (Phase 2)
+
+Pure ffmpeg, no LLM involvement (Rule 4). Per scene: a still image
+(`ImageProvider`) + a voiceover clip (`TTSProvider`) become one `.mp4`
+segment; segments concatenate; captions burn in from an SRT built directly
+from each scene's known `caption` text and `duration_seconds` (no ASR --
+see the `ponytail:` note in `app/video/captions.py`, real per-word timing
+arrives with a real TTS provider in Phase 5). `libopenh264` is the H.264
+encoder in use, not `libx264` -- this environment's ffmpeg build has no
+software `libx264` (patent-restricted distro packaging), only hardware
+H.264 encoders plus `libopenh264`; swap `VIDEO_CODEC` in
+`app/video/renderer.py` if deploying somewhere `libx264` is available.
+
 ## Deliberately deferred
 
 - Frontend: directory exists, nothing built until Phase 4 (dashboard needs

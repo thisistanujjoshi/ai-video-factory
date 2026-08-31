@@ -16,6 +16,7 @@ class Video(Base):
     script_id: Mapped[int | None] = mapped_column(ForeignKey("scripts.id"), nullable=True)
     state: Mapped[VideoState] = mapped_column(Enum(VideoState), default=VideoState.DRAFT)
     title: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    rendered_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
