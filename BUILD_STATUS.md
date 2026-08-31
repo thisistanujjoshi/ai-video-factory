@@ -751,3 +751,71 @@ needs to change.
 
 **Next task:** none currently assigned. See the "Genuine gaps" list above
 this section (still applicable) plus this addendum's known limitations.
+
+## Phase 5 addendum 2 — Real VideoProvider (Veo)
+
+**Status:** Complete, not live-tested (real quota block, not a guess)
+
+**Implemented:**
+- `VideoProvider` ABC (`app/providers/video.py`): `generate_video_clip()`
+  returns raw MP4 bytes for one scene. Optional the way the spec's
+  original providers weren't — unconfigured (`VIDEO_PROVIDER` unset, the
+  default) means the pipeline behaves exactly as before this existed
+  (`ImageProvider` still frames); explicit opt-in via `mock` or `gemini`.
+- `MockVideoProvider`: a color that visibly cycles over the clip's
+  duration (ffmpeg `color` source + a `hue` rotation) — deterministic
+  from the prompt, no API key, no new dependency, and genuinely in motion
+  (verified: two extracted frames differ), which is the one thing that
+  actually needs to differ from `MockImageProvider` to exercise the new
+  video-clip render path.
+- `GeminiVideoProvider`: Veo via `google-genai`'s long-running-operation
+  API (`generate_videos` → poll `operations.get` until `done` →
+  `response.generated_videos[0].video.video_bytes`). **IMPLEMENTED, NOT
+  LIVE TESTED** — a real call (`veo-3.1-lite-generate-preview`, 4s clip)
+  returned a real `429 RESOURCE_EXHAUSTED` with no quota number given
+  (unlike TTS's explicit "10/day"), consistent with Veo being paid/
+  billing-gated rather than free-tier-with-a-quota. The operation-polling
+  shape is verified against the installed SDK's type signatures (not a
+  guess), but the result-extraction path (`video_bytes` vs. `uri`-only)
+  is unverified against a real completed response.
+- `app/video/renderer.py`: `SceneRenderInput` gained `visual_is_video`
+  (default `False`); the per-scene ffmpeg command branches between
+  `-loop 1 -i <image>` and `-i <video clip>`, explicit `-map` to take
+  video from the clip and audio from the voiceover either way. Renamed
+  `image_path` → `visual_path` since it's no longer always a still image.
+- `produce_video()`: when a `VideoProvider` is configured, calls it
+  instead of `ImageProvider` per scene, stores the clip as an `Asset` with
+  `type="video"`, and passes `visual_is_video=True` to the renderer.
+
+**A real architectural gap, stated plainly rather than solved:** real
+video generation is a long-running operation (commonly minutes, not
+seconds) — calling it from the synchronous request handler the rest of
+this pipeline's providers use (documented as a "should be a Celery job"
+gap since Phase 1) will very likely time out in practice with
+`VIDEO_PROVIDER=gemini`. Fine for `mock` (instant, same as everything
+else); a real fix needs the async job infrastructure this project has
+deferred throughout, not something bolted on here.
+
+**Tests:** 96 passed, 3 skipped (Gemini live tests). New:
+`test_video_provider.py` (mock clip is playable + deterministic-per-
+prompt; `get_video_provider()` defaults to `None` and validates the
+`gemini` API-key requirement; `GeminiVideoProvider`'s polling loop,
+error handling, and timeout tested against a faked SDK response shape
+via `unittest.mock`, so the *logic* is verified without needing quota),
+`test_renderer.py` (new video-clip render path), and
+`test_production_with_video_provider.py` (full HTTP render with
+`VIDEO_PROVIDER=mock` configured).
+
+**Known limitations:**
+- Not live-tested against a real completed Veo response (quota-blocked,
+  see above) — the `video_bytes`-vs-`uri` branch and the actual returned
+  `mime_type`/format are unverified.
+- No handling for a `uri`-only response (raises clearly instead of
+  silently failing, but doesn't implement the authenticated GCS download
+  that would be needed).
+- Synchronous-endpoint timeout risk (above) is documented, not fixed.
+- `duration_seconds` sent to Veo is rounded to the nearest whole second
+  (`GenerateVideosConfig` only accepts `int`) — fine for now, but
+  something to know if per-scene timing precision ever matters more.
+
+**Next task:** none currently assigned.

@@ -15,9 +15,14 @@ class RenderError(Exception):
 
 @dataclass
 class SceneRenderInput:
-    image_path: Path
+    visual_path: Path
     audio_path: Path
     duration_seconds: float
+    # False (default): visual_path is a still image, looped for the scene's
+    # duration (ImageProvider). True: visual_path is an already-encoded
+    # video clip (VideoProvider) -- its own video stream is used directly,
+    # muted, with audio_path's voiceover as the audio track instead.
+    visual_is_video: bool = False
 
 
 async def _run_ffmpeg(args: list[str]) -> None:
@@ -43,21 +48,28 @@ async def render_video(
     output_path: Path,
     resolution: str = "1080x1920",
 ) -> None:
-    """Scene stills + per-scene voiceover -> per-scene clips -> concat ->
-    caption burn-in -> final MP4. Pure ffmpeg orchestration, no LLM calls."""
+    """Scene visuals (still images or generated video clips) + per-scene
+    voiceover -> per-scene clips -> concat -> caption burn-in -> final MP4.
+    Pure ffmpeg orchestration, no LLM calls."""
     width, height = resolution.split("x")
 
     clip_paths = []
     for index, scene in enumerate(scenes, start=1):
         clip_path = work_dir / f"scene_{index}.mp4"
+        input_args = (
+            ["-i", str(scene.visual_path)]
+            if scene.visual_is_video
+            else ["-loop", "1", "-i", str(scene.visual_path)]
+        )
         await _run_ffmpeg(
             [
-                "-loop",
-                "1",
-                "-i",
-                str(scene.image_path),
+                *input_args,
                 "-i",
                 str(scene.audio_path),
+                "-map",
+                "0:v:0",
+                "-map",
+                "1:a:0",
                 "-t",
                 str(scene.duration_seconds),
                 "-vf",

@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.models import Asset, AudioAsset, ContentProfile, Video, VideoState, transition
 from app.providers.image import get_image_provider
 from app.providers.tts import get_tts_provider
+from app.providers.video import get_video_provider
 from app.storage import get_storage_provider
 from app.video.captions import build_srt
 from app.video.renderer import SceneRenderInput, render_video
@@ -30,11 +31,21 @@ def _wav_duration_seconds(wav_bytes: bytes) -> float:
 
 
 async def produce_video(db: Session, video: Video, profile: ContentProfile) -> None:
-    """Storyboard -> real MP4: per-scene image + voiceover, ffmpeg render,
-    caption burn-in. Raises on failure after marking the video FAILED."""
+    """Storyboard -> real MP4: per-scene visual (image, or a real video
+    clip when VIDEO_PROVIDER is configured -- see app/providers/video.py)
+    + voiceover, ffmpeg render, caption burn-in. Raises on failure after
+    marking the video FAILED.
+
+    ponytail: a real VideoProvider makes per-scene generation minutes-long
+    instead of instant (mock) or seconds (TTS/images) -- this still runs
+    synchronously in the request handler like the rest of this pipeline,
+    which will likely time out in practice with VIDEO_PROVIDER=gemini.
+    Not solved here; see BUILD_STATUS.md.
+    """
     storage = get_storage_provider()
     image_provider = get_image_provider()
     tts_provider = get_tts_provider()
+    video_provider = get_video_provider()
     resolution = profile.video.get("resolution", "1080x1920")
     width, height = (int(part) for part in resolution.split("x"))
 
@@ -46,20 +57,40 @@ async def produce_video(db: Session, video: Video, profile: ContentProfile) -> N
             render_inputs = []
 
             for scene in video.scenes:
-                image_bytes = await image_provider.generate_image(
-                    scene.visual_prompt, width=width, height=height
-                )
-                image_path = await storage.upload(
-                    f"videos/{video.id}/scenes/{scene.scene_number}/image.png", image_bytes
-                )
+                if video_provider is not None:
+                    visual_bytes = await video_provider.generate_video_clip(
+                        scene.visual_prompt,
+                        duration_seconds=scene.duration_seconds,
+                        width=width,
+                        height=height,
+                    )
+                    visual_path = await storage.upload(
+                        f"videos/{video.id}/scenes/{scene.scene_number}/clip.mp4", visual_bytes
+                    )
+                    asset_type = "video"
+                    asset_provider: object = video_provider
+                else:
+                    visual_bytes = await image_provider.generate_image(
+                        scene.visual_prompt, width=width, height=height
+                    )
+                    visual_path = await storage.upload(
+                        f"videos/{video.id}/scenes/{scene.scene_number}/image.png", visual_bytes
+                    )
+                    asset_type = "image"
+                    asset_provider = image_provider
+
                 db.add(
                     Asset(
                         video_id=video.id,
                         scene_id=scene.id,
-                        type="image",
-                        provider=type(image_provider).__name__,
-                        source="mock",
-                        path=image_path,
+                        type=asset_type,
+                        provider=type(asset_provider).__name__,
+                        source=(
+                            "mock"
+                            if asset_type == "image"
+                            else type(asset_provider).__name__.lower()
+                        ),
+                        path=visual_path,
                     )
                 )
 
@@ -85,9 +116,10 @@ async def produce_video(db: Session, video: Video, profile: ContentProfile) -> N
 
                 render_inputs.append(
                     SceneRenderInput(
-                        image_path=Path(image_path),
+                        visual_path=Path(visual_path),
                         audio_path=Path(audio_path),
                         duration_seconds=actual_duration,
+                        visual_is_video=video_provider is not None,
                     )
                 )
 

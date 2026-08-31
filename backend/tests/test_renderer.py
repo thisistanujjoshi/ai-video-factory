@@ -32,6 +32,30 @@ def _lavfi_png(path: Path, color: str, width: int = 160, height: int = 284) -> N
     )
 
 
+def _lavfi_mp4(
+    path: Path, color: str, duration: float, width: int = 160, height: int = 284
+) -> None:
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-y",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            f"color=c={color}:s={width}x{height}:d={duration}",
+            "-vf",
+            "format=yuv420p",
+            "-c:v",
+            "libopenh264",
+            str(path),
+        ],
+        check=True,
+    )
+
+
 def _lavfi_wav(path: Path, duration: float) -> None:
     subprocess.run(
         [
@@ -101,6 +125,29 @@ def test_render_video_produces_a_real_mp4():
         assert output_path.exists()
         assert output_path.stat().st_size > 0
 
+        probe = _ffprobe(output_path)
+        codec_types = {s["codec_type"] for s in probe["streams"]}
+        assert codec_types == {"video", "audio"}
+        assert 1.8 <= float(probe["format"]["duration"]) <= 2.2
+
+
+def test_render_video_with_generated_video_clips_instead_of_stills():
+    with tempfile.TemporaryDirectory() as tmp:
+        work_dir = Path(tmp)
+        scenes = []
+        for i, (color, duration) in enumerate([("green", 1.0), ("purple", 1.0)], start=1):
+            clip_path = work_dir / f"clip_{i}.mp4"
+            audio_path = work_dir / f"in_{i}.wav"
+            _lavfi_mp4(clip_path, color, duration)
+            _lavfi_wav(audio_path, duration)
+            scenes.append(SceneRenderInput(clip_path, audio_path, duration, visual_is_video=True))
+
+        output_path = work_dir / "final.mp4"
+        import asyncio
+
+        asyncio.run(render_video(work_dir, scenes, None, output_path, resolution="160x284"))
+
+        assert output_path.exists()
         probe = _ffprobe(output_path)
         codec_types = {s["codec_type"] for s in probe["streams"]}
         assert codec_types == {"video", "audio"}
