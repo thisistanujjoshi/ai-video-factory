@@ -58,5 +58,21 @@ services:
       - ./backend:/app
       - ./storage:/app/storage
 
+  beat:
+    build: ./backend
+    command: celery -A app.workers.celery_app beat --loglevel=info
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/ai_video_factory
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+      - ./storage:/app/storage
+
 volumes:
   postgres_data:
