@@ -97,11 +97,24 @@ def _mock_qa(count: int) -> dict:
     }
 
 
+def _mock_strategy(count: int) -> dict:
+    return {
+        "best_topics": ["unsolved disappearances", "cold cases"],
+        "best_hook_types": ["curiosity", "question"],
+        "recommended_duration": {"min_seconds": 45, "max_seconds": 75},
+        "recommended_pacing": "fast",
+        "recommended_posting_windows": ["evenings", "weekends"],
+        "avoid_patterns": ["repeating the same hook phrasing across videos"],
+        "rationale": "Mock strategy -- not derived from real performance data.",
+    }
+
+
 _MOCK_GENERATORS = {
     "ideas": _mock_ideas,
     "script": _mock_script,
     "storyboard": _mock_storyboard,
     "qa": _mock_qa,
+    "strategy": _mock_strategy,
 }
 
 

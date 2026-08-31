@@ -29,6 +29,12 @@ class Settings(BaseSettings):
     tts_provider: str | None = None
     tts_api_key: str | None = None
 
+    # Not in the spec's original env var list (section 48) -- added when
+    # content-memory similarity detection (section 37) needed a provider
+    # slot, same pattern as the other four.
+    embedding_provider: str | None = None
+    embedding_api_key: str | None = None
+
     storage_provider: str = "local"
 
     youtube_client_id: str | None = None

@@ -24,4 +24,5 @@ class Idea(Base):
     scores: Mapped[dict] = mapped_column(JSON)
     overall_score: Mapped[float] = mapped_column(Float)
     selected: Mapped[bool] = mapped_column(Boolean, default=False)
+    embedding: Mapped[list[float] | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

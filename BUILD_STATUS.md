@@ -457,3 +457,79 @@ totals, not an error).
 **Next task:** Phase 8 — learning: performance analysis, content pattern
 analysis, strategy generation/storage, content memory (semantic duplicate
 detection).
+
+## Phase 8 — Learning
+
+**Status:** Complete
+
+**Implemented:**
+- `compute_patterns()` (`app/services/strategy.py`): pure aggregation, no
+  LLM — averages engagement/retention (from Phase 7's latest metric per
+  publication) grouped by `target_emotion` (the closest stored stand-in
+  for "hook type" — no such column exists on `Idea`, see its docstring),
+  duration bucket (short/medium/long relative to the profile's own
+  min/max), and platform, each with a sample size so small buckets are
+  visibly small (spec section 35: correlation, not causation).
+- `StrategyAgent` (`app/agents/strategy/`): same generate→validate→
+  retry→log pattern as every other agent, reasons over the computed
+  patterns into `{best_topics, best_hook_types, recommended_duration,
+  recommended_pacing, recommended_posting_windows, avoid_patterns,
+  rationale}` (spec section 36), explicitly instructed not to overstate
+  confidence from small samples.
+- `ContentStrategy` model — one row per generation, history kept (not
+  overwritten); `GET .../strategy` returns the latest.
+- **The strategy actually changes future idea generation, verifiably**:
+  `IdeaAgent` takes an optional `strategy` param and folds
+  `best_topics`/`best_hook_types`/duration/pacing/`avoid_patterns` into
+  the prompt (bumped to `prompts/ideas/v2.txt`); `/ideas/generate`
+  fetches the profile's latest strategy automatically.
+  `test_strategy_integration.py` proves this directly with a recording
+  fake LLM provider that captures the actual prompt text — not just that
+  a strategy object exists somewhere unused.
+- `EmbeddingProvider` abstraction (`app/providers/embedding.py`):
+  `MockEmbeddingProvider` is a hashing-trick bag-of-words vector — a real
+  (if crude) technique, not random noise, and it genuinely catches
+  lexical near-duplicates while leaving unrelated text alone (verified:
+  0.92 similarity for reworded-but-same-story text, 0.08 for unrelated
+  text). `GeminiEmbeddingProvider` exists — **IMPLEMENTED, NOT LIVE
+  TESTED** this pass (verified the SDK call shape via inspection, didn't
+  spend further live-API budget on the available key — see Phase 5).
+- Content memory (`app/services/content_memory.py`, spec section 37):
+  `IdeaAgent` embeds every surviving candidate and rejects (doesn't
+  persist) anything cosine-similar ≥ 0.85 to an existing idea *on the
+  same content profile* — a different profile can cover the same
+  real-world story. Caught a real bug while wiring this up: the initial
+  256-dim hashing space let two single-digit tokens collide into the
+  same bucket and produce a false 1.0 similarity between distinct mock
+  ideas, silently dropping a legitimate one — fixed by widening to
+  4096 dims (see the comment on `EMBEDDING_DIM`).
+- API: `POST /content-profiles/{id}/strategy/generate`, `GET .../strategy`.
+- Frontend: profile detail page shows the current strategy (or offers to
+  generate one) and regenerates it from history on demand.
+
+**Tests:** 61 passed, 2 skipped (unrelated Gemini live tests). New:
+`test_content_memory.py`, `test_strategy_computation.py` (aggregation
+math against hand-built fixtures), `test_strategy_integration.py` (the
+prompt-content proof above), `test_strategy_api.py`, `test_idea_dedup.py`
+(near-duplicate rejected across separate `generate()` calls on the same
+profile; a second profile is unaffected by the first's history).
+
+**Known limitations:**
+- "Hook type" pattern analysis uses `target_emotion` as a proxy — there's
+  no field recording which of `profile.strategy.hook_types` an idea
+  actually used. Add one if hook-type-specific learning turns out to
+  matter more than emotion-based learning.
+- No embedding-based similarity check on script/storyboard content, only
+  ideas — matches spec section 37's own framing ("New Idea → Embedding →
+  Similarity Search"), but a near-duplicate could still theoretically
+  emerge later in the pipeline from two dissimilar ideas.
+- `SIMILARITY_THRESHOLD = 0.85` is picked, not tuned, and calibrated
+  against the mock's lexical-overlap scale — it will need re-tuning once
+  a real (semantic) embedding provider is actually in use, since
+  "0.85 cosine similarity" means something different for a transformer
+  embedding than for a hashing-trick bag-of-words vector.
+
+**Next task:** Phase 9 — autonomous mode: scheduled research → ideation →
+production → QA → publishing → analytics → strategy loop, with
+MANUAL/SEMI_AUTOMATIC/AUTONOMOUS safety modes per content profile (spec
+section 52).

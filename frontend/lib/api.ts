@@ -168,6 +168,19 @@ export interface VideoAnalytics {
   totals: AnalyticsTotals;
 }
 
+export interface ContentStrategy {
+  id: number;
+  content_profile_id: number;
+  best_topics: string[];
+  best_hook_types: string[];
+  recommended_duration: { min_seconds: number; max_seconds: number };
+  recommended_pacing: string;
+  recommended_posting_windows: string[];
+  avoid_patterns: string[];
+  rationale: string;
+  sample_size: number;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_URL}${path}`, {
     ...init,
@@ -191,6 +204,9 @@ export const api = {
   updateProfile: (id: number, payload: Omit<ContentProfile, "id">) =>
     request<ContentProfile>(`/content-profiles/${id}`, { method: "PUT", body: JSON.stringify(payload) }),
   deleteProfile: (id: number) => request<void>(`/content-profiles/${id}`, { method: "DELETE" }),
+  generateStrategy: (id: number) =>
+    request<ContentStrategy>(`/content-profiles/${id}/strategy/generate`, { method: "POST" }),
+  getStrategy: (id: number) => request<ContentStrategy>(`/content-profiles/${id}/strategy`),
 
   generateIdeas: (contentProfileId: number, count = 10) =>
     request<Idea[]>("/ideas/generate", {

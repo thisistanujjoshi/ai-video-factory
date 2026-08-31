@@ -2,7 +2,7 @@
 
 import { use, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { api, type ContentProfile } from "@/lib/api";
+import { api, type ContentProfile, type ContentStrategy } from "@/lib/api";
 import { button, buttonDanger, card, input, label } from "@/lib/ui";
 
 export default function ContentProfileDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -11,12 +11,15 @@ export default function ContentProfileDetailPage({ params }: { params: Promise<{
   const router = useRouter();
 
   const [profile, setProfile] = useState<ContentProfile | null>(null);
+  const [strategy, setStrategy] = useState<ContentStrategy | null>(null);
   const [ideaCount, setIdeaCount] = useState(10);
   const [error, setError] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
+  const [generatingStrategy, setGeneratingStrategy] = useState(false);
 
   useEffect(() => {
     api.getProfile(profileId).then(setProfile).catch((e) => setError(String(e)));
+    api.getStrategy(profileId).then(setStrategy).catch(() => setStrategy(null));
   }, [profileId]);
 
   async function onGenerateIdeas() {
@@ -29,6 +32,18 @@ export default function ContentProfileDetailPage({ params }: { params: Promise<{
       setError(String(e));
     } finally {
       setGenerating(false);
+    }
+  }
+
+  async function onGenerateStrategy() {
+    setGeneratingStrategy(true);
+    setError(null);
+    try {
+      setStrategy(await api.generateStrategy(profileId));
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setGeneratingStrategy(false);
     }
   }
 
@@ -80,6 +95,44 @@ export default function ContentProfileDetailPage({ params }: { params: Promise<{
             .map(([k]) => k)
             .join(", ") || "none"}
         </div>
+      </div>
+
+      <div className={`${card} space-y-3`}>
+        <div className="flex items-center justify-between">
+          <h2 className="font-medium">Content strategy</h2>
+          <button onClick={onGenerateStrategy} disabled={generatingStrategy} className={button}>
+            {generatingStrategy ? "Generating..." : "Regenerate from history"}
+          </button>
+        </div>
+        {strategy ? (
+          <div className="space-y-2 text-sm">
+            <p className="text-neutral-500">
+              Based on {strategy.sample_size} published video{strategy.sample_size === 1 ? "" : "s"}.
+            </p>
+            <p>
+              <span className={label}>Best topics</span>
+              {strategy.best_topics.join(", ") || "—"}
+            </p>
+            <p>
+              <span className={label}>Best hook types</span>
+              {strategy.best_hook_types.join(", ") || "—"}
+            </p>
+            <p>
+              <span className={label}>Recommended duration</span>
+              {strategy.recommended_duration.min_seconds}-{strategy.recommended_duration.max_seconds}s,{" "}
+              {strategy.recommended_pacing} pacing
+            </p>
+            <p>
+              <span className={label}>Avoid</span>
+              {strategy.avoid_patterns.join(", ") || "—"}
+            </p>
+            <p className="text-neutral-500 italic">{strategy.rationale}</p>
+          </div>
+        ) : (
+          <p className="text-sm text-neutral-500">
+            No strategy generated yet. Future idea generation uses whatever strategy is current.
+          </p>
+        )}
       </div>
 
       <div className={`${card} space-y-3`}>

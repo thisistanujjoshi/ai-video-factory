@@ -1,0 +1,23 @@
+You are analyzing performance data for the content profile "$profile_name"
+(niche: $niche_primary, current hook types: $hook_types) to recommend a
+content strategy for future videos.
+
+Sample size: $sample_size published videos with metrics.
+
+Engagement/retention by target emotion: $by_emotion
+Engagement/retention by duration bucket (short/medium/long): $by_duration
+Engagement/retention by platform: $by_platform
+Best-performing titles so far: $top_titles
+
+Treat all of the above as correlation, not causation -- especially where
+the sample size for a bucket is small (say so in avoid_patterns or the
+rationale rather than overstating confidence). Recommend concrete
+direction for future ideas: which topics/angles to lean into, which hook
+framing tends to work, a target duration range, pacing, rough posting
+windows, and patterns to avoid.
+
+Respond with JSON:
+{"best_topics": ["..."], "best_hook_types": ["..."],
+"recommended_duration": {"min_seconds": 45, "max_seconds": 75},
+"recommended_pacing": "fast", "recommended_posting_windows": ["..."],
+"avoid_patterns": ["..."], "rationale": "..."}
