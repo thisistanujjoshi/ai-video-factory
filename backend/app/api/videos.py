@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -13,6 +14,14 @@ from app.services.production import produce_video
 from app.services.qa import run_qa
 
 router = APIRouter(prefix="/videos", tags=["videos"])
+
+
+def _require_state(video: Video, expected: VideoState) -> None:
+    if video.state != expected:
+        raise HTTPException(
+            status_code=409,
+            detail=f"video is in state {video.state.value}, expected {expected.value}",
+        )
 
 
 class VideoGenerateRequest(BaseModel):
@@ -64,11 +73,7 @@ async def render_video_endpoint(video_id: int, db: Session = Depends(get_db)) ->
     video = db.get(Video, video_id)
     if video is None:
         raise HTTPException(status_code=404, detail="video not found")
-    if video.state != VideoState.STORYBOARD_READY:
-        raise HTTPException(
-            status_code=409,
-            detail=f"video is in state {video.state.value}, expected storyboard_ready",
-        )
+    _require_state(video, VideoState.STORYBOARD_READY)
     profile = db.get(ContentProfile, video.content_profile_id)
     if profile is None:
         raise HTTPException(status_code=404, detail="content profile not found")
@@ -83,10 +88,7 @@ async def qa_video(video_id: int, db: Session = Depends(get_db)) -> QAReportOut:
     video = db.get(Video, video_id)
     if video is None:
         raise HTTPException(status_code=404, detail="video not found")
-    if video.state != VideoState.RENDERED:
-        raise HTTPException(
-            status_code=409, detail=f"video is in state {video.state.value}, expected rendered"
-        )
+    _require_state(video, VideoState.RENDERED)
     script = db.get(Script, video.script_id)
     profile = db.get(ContentProfile, video.content_profile_id)
     if script is None or profile is None:
@@ -118,10 +120,7 @@ async def regenerate_video(video_id: int, db: Session = Depends(get_db)) -> Vide
     video = db.get(Video, video_id)
     if video is None:
         raise HTTPException(status_code=404, detail="video not found")
-    if video.state != VideoState.QA_FAILED:
-        raise HTTPException(
-            status_code=409, detail=f"video is in state {video.state.value}, expected qa_failed"
-        )
+    _require_state(video, VideoState.QA_FAILED)
     script = db.get(Script, video.script_id)
     profile = db.get(ContentProfile, video.content_profile_id)
     if script is None or profile is None:
@@ -132,6 +131,30 @@ async def regenerate_video(video_id: int, db: Session = Depends(get_db)) -> Vide
     await StoryboardAgent(get_llm_provider()).generate(db, script, profile, video)
     transition(video, VideoState.STORYBOARD_READY)
 
+    db.commit()
+    db.refresh(video)
+    return video
+
+
+@router.post("/{video_id}/approve", response_model=VideoOut)
+def approve_video(video_id: int, db: Session = Depends(get_db)) -> Video:
+    video = db.get(Video, video_id)
+    if video is None:
+        raise HTTPException(status_code=404, detail="video not found")
+    _require_state(video, VideoState.AWAITING_APPROVAL)
+    transition(video, VideoState.APPROVED)
+    db.commit()
+    db.refresh(video)
+    return video
+
+
+@router.post("/{video_id}/reject", response_model=VideoOut)
+def reject_video(video_id: int, db: Session = Depends(get_db)) -> Video:
+    video = db.get(Video, video_id)
+    if video is None:
+        raise HTTPException(status_code=404, detail="video not found")
+    _require_state(video, VideoState.AWAITING_APPROVAL)
+    transition(video, VideoState.REJECTED)
     db.commit()
     db.refresh(video)
     return video
@@ -148,3 +171,11 @@ def get_video(video_id: int, db: Session = Depends(get_db)) -> Video:
     if video is None:
         raise HTTPException(status_code=404, detail="video not found")
     return video
+
+
+@router.get("/{video_id}/file")
+def get_video_file(video_id: int, db: Session = Depends(get_db)) -> FileResponse:
+    video = db.get(Video, video_id)
+    if video is None or not video.rendered_path:
+        raise HTTPException(status_code=404, detail="rendered video not found")
+    return FileResponse(video.rendered_path, media_type="video/mp4")

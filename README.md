@@ -11,8 +11,8 @@ progress in [BUILD_STATUS.md](BUILD_STATUS.md).
 ## Stack
 
 Backend: Python 3.12, FastAPI, SQLAlchemy, Alembic, PostgreSQL, Redis, Celery.
-Frontend: Next.js, React, TypeScript, Tailwind (Phase 4+).
-Video: FFmpeg (Phase 2+).
+Frontend: Next.js (App Router), React, TypeScript, Tailwind — `frontend/`.
+Video: FFmpeg.
 
 ## Quickstart (Docker)
 
@@ -33,6 +33,18 @@ cd backend
 uv venv && uv pip install -e ".[dev]"
 uv run uvicorn app.main:app --reload
 ```
+
+## Dashboard
+
+```bash
+cd frontend
+cp .env.local.example .env.local
+npm install
+npm run dev   # http://localhost:3000
+```
+
+Needs the backend running (see above) — the dashboard talks to it directly
+from the browser, no server-side proxy.
 
 ## Development
 

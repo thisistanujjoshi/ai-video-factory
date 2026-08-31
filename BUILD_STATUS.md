@@ -212,3 +212,62 @@ out-of-order calls (`qa` before `render`, `regenerate` when not
 
 **Next task:** Phase 4 — dashboard: content profile UI, ideas UI, video
 queue, video preview, approval, regeneration.
+
+## Phase 4 — Dashboard
+
+**Status:** Complete
+
+**Implemented:**
+- Backend: `POST /api/v1/videos/{id}/approve` and `/reject`
+  (`awaiting_approval → approved|rejected`), `GET /api/v1/videos/{id}/file`
+  (streams the rendered MP4 by `rendered_path`), CORS opened for
+  `localhost:3000`.
+- Frontend (`frontend/`, Next.js 16 App Router + TypeScript + Tailwind, no
+  UI/state-management library — plain `fetch` + `useState`/`useEffect`,
+  client components throughout since this is an operator dashboard, not a
+  content site needing SSR/SEO): `/dashboard`, `/content-profiles`,
+  `/content-profiles/[id]` (view + generate ideas), `/ideas` (generate
+  video from an idea), `/videos`, `/videos/[id]` (script/scenes, QA report,
+  state-gated action buttons — render/QA/approve/reject/regenerate — and an
+  embedded `<video>` preview once rendered), `/queue` (videos bucketed by
+  state, client-side). `/publishing` and `/analytics` are honest
+  placeholders naming the phase that implements them (Rule 1: never claim
+  a placeholder is complete); `/settings` is a read-only reference of
+  provider env vars — there's no settings API yet.
+- `lib/api.ts`: one typed client mirroring the backend's Pydantic schemas,
+  used by every page.
+
+**Tests:** Backend 23/23 passing (added `test_approval.py` for
+approve/reject/file). Frontend: `npm run lint` and `npm run build` both
+clean (TypeScript strict, all 12 routes compile — 10 static, 2 dynamic for
+the `[id]` routes).
+
+**Verification:** Both dev servers were actually started (`uvicorn` against
+a throwaway SQLite DB migrated via Alembic, `next dev`) and the full golden
+path was driven with `curl` using the exact endpoints/payloads the frontend
+calls: create profile → generate ideas → generate video → render → QA →
+approve, plus a CORS preflight check confirming the browser could make
+these calls from `localhost:3000`. **Not verified**: actual interactive
+browser click-through — no browser-automation tool was connected in this
+session (the `claude-in-chrome` skill exists but its underlying tools
+weren't registered here). The API contract and page compilation are
+confirmed; visual/interactive behavior (form validation feel, button
+states, video playback) is not. Worth a manual pass or a Playwright test
+(spec section 46 mentions Playwright for exactly this) before relying on
+this as fully user-verified.
+
+**Known limitations:**
+- No auth — anyone who can reach the API can do anything. Fine for local
+  MVP use; spec section 44 (auth/authorization) is unaddressed until a
+  phase that actually needs it.
+- `/queue` derives its buckets from `GET /videos` client-side; no backend
+  job-queue/progress endpoint (matches the "no Celery yet" tradeoff noted
+  in Phases 1-2 — becomes real once the pipeline is actually async).
+- No edit form for an existing content profile (create + view only); add
+  if that turns out to be needed rather than always creating a new one.
+
+**Next task:** Phase 5 — real AI provider implementations, added behind
+the existing provider abstractions (mocks stay as the default/fallback).
+Needs API keys from the user to live-test; will implement the interfaces
+and configuration regardless per Rule 1, and mark live-testing status
+honestly.
