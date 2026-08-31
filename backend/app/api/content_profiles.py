@@ -5,9 +5,17 @@ from app.agents.strategy import StrategyAgent
 from app.database import get_db
 from app.models import ContentProfile, ContentStrategy
 from app.providers.llm import get_llm_provider
+from app.schemas.autonomous import AutonomousCycleOut
 from app.schemas.content_profile import ContentProfileCreate, ContentProfileOut
+from app.schemas.publication import PublicationOut
 from app.schemas.strategy import ContentStrategyOut
-from app.services.strategy import compute_patterns
+from app.schemas.video import VideoOut
+from app.services.autonomous import (
+    AutomationDisabledError,
+    NoViableIdeasError,
+    run_autonomous_cycle,
+)
+from app.services.strategy import compute_patterns, latest_strategy
 
 router = APIRouter(prefix="/content-profiles", tags=["content-profiles"])
 
@@ -21,6 +29,7 @@ def _apply(profile: ContentProfile, payload: ContentProfileCreate) -> None:
     profile.strategy = payload.strategy.model_dump()
     profile.publishing = payload.publishing.model_dump()
     profile.schedule = payload.schedule.model_dump()
+    profile.automation_mode = payload.automation_mode
 
 
 @router.post("", response_model=ContentProfileOut, status_code=201)
@@ -97,12 +106,34 @@ async def generate_strategy(profile_id: int, db: Session = Depends(get_db)) -> C
 
 @router.get("/{profile_id}/strategy", response_model=ContentStrategyOut)
 def get_latest_strategy(profile_id: int, db: Session = Depends(get_db)) -> ContentStrategy:
-    strategy = (
-        db.query(ContentStrategy)
-        .filter_by(content_profile_id=profile_id)
-        .order_by(ContentStrategy.id.desc())
-        .first()
-    )
+    strategy = latest_strategy(db, profile_id)
     if strategy is None:
         raise HTTPException(status_code=404, detail="no strategy generated yet for this profile")
     return strategy
+
+
+@router.post("/{profile_id}/autonomous-cycle", response_model=AutonomousCycleOut)
+async def run_autonomous_cycle_endpoint(
+    profile_id: int, db: Session = Depends(get_db)
+) -> AutonomousCycleOut:
+    """One full research(skipped)->ideas->production->QA->(AUTONOMOUS only)
+    publish cycle, synchronously. Refused (409) for automation_mode=manual.
+    """
+    profile = db.get(ContentProfile, profile_id)
+    if profile is None:
+        raise HTTPException(status_code=404, detail="content profile not found")
+
+    try:
+        result = await run_autonomous_cycle(db, profile)
+    except AutomationDisabledError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except NoViableIdeasError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    return AutonomousCycleOut(
+        video=VideoOut.model_validate(result.video),
+        qa_passed=result.qa_outcome.passed,
+        content_score=result.qa_outcome.content.score,
+        auto_published=result.auto_published,
+        publications=[PublicationOut.model_validate(p) for p in (result.publications or [])],
+    )

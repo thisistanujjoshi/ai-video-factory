@@ -1,9 +1,10 @@
 from datetime import datetime
 
-from sqlalchemy import JSON, DateTime, String, func
+from sqlalchemy import JSON, DateTime, Enum, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
+from app.models.automation_mode import AutomationMode
 
 # ponytail: nested config (niche/audience/video/style/strategy/publishing/schedule)
 # lives as JSON columns instead of ~7 join tables — nothing queries into these
@@ -23,6 +24,9 @@ class ContentProfile(Base):
     strategy: Mapped[dict] = mapped_column(JSON)
     publishing: Mapped[dict] = mapped_column(JSON)
     schedule: Mapped[dict] = mapped_column(JSON)
+    automation_mode: Mapped[AutomationMode] = mapped_column(
+        Enum(AutomationMode), default=AutomationMode.MANUAL
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()

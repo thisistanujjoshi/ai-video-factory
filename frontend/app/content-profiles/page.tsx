@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { api, type ContentProfile } from "@/lib/api";
+import { api, type AutomationMode, type ContentProfile } from "@/lib/api";
 import { button, card, input, label } from "@/lib/ui";
 
 const DEFAULT_FORM = {
@@ -21,6 +21,7 @@ const DEFAULT_FORM = {
   narration: "dramatic",
   visualStyle: "cinematic",
   hookTypes: "curiosity, question",
+  automationMode: "manual" as AutomationMode,
 };
 
 export default function ContentProfilesPage() {
@@ -63,6 +64,7 @@ export default function ContentProfilesPage() {
         strategy: { hook_types: form.hookTypes.split(",").map((s) => s.trim()).filter(Boolean) },
         publishing: { youtube: true, instagram: true, tiktok: true },
         schedule: { videos_per_day: 1 },
+        automation_mode: form.automationMode,
       });
       setForm(DEFAULT_FORM);
       refresh();
@@ -85,7 +87,9 @@ export default function ContentProfilesPage() {
               <Link href={`/content-profiles/${p.id}`} className="hover:underline">
                 {p.name}
               </Link>
-              <span className="text-neutral-500">{p.niche.primary}</span>
+              <span className="text-neutral-500">
+                {p.niche.primary} &middot; {p.automation_mode.replace("_", "-")}
+              </span>
             </li>
           ))}
           {profiles.length === 0 && <li className="py-2 text-sm text-neutral-500">No profiles yet.</li>}
@@ -211,6 +215,18 @@ export default function ContentProfilesPage() {
               value={form.hookTypes}
               onChange={(e) => setForm({ ...form, hookTypes: e.target.value })}
             />
+          </div>
+          <div>
+            <label className={label}>Automation mode</label>
+            <select
+              className={input}
+              value={form.automationMode}
+              onChange={(e) => setForm({ ...form, automationMode: e.target.value as AutomationMode })}
+            >
+              <option value="manual">Manual (every video needs approval)</option>
+              <option value="semi_automatic">Semi-automatic (auto-generate, human approves)</option>
+              <option value="autonomous">Autonomous (auto-publish when QA passes)</option>
+            </select>
           </div>
         </div>
         <button type="submit" disabled={submitting} className={button}>

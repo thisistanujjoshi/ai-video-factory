@@ -2,12 +2,21 @@ from collections import defaultdict
 
 from sqlalchemy.orm import Session
 
-from app.models import ContentProfile, Idea, Script, Video, VideoState
+from app.models import ContentProfile, ContentStrategy, Idea, Script, Video, VideoState
 from app.services.analytics import latest_metrics_for_video
 
 # ponytail: no "hook_type" column exists on Idea (the LLM freely writes a
 # hook, it isn't tagged from profile.strategy.hook_types) -- target_emotion
 # is the closest stored categorical stand-in for "what kind of hook worked."
+
+
+def latest_strategy(db: Session, content_profile_id: int) -> ContentStrategy | None:
+    return (
+        db.query(ContentStrategy)
+        .filter_by(content_profile_id=content_profile_id)
+        .order_by(ContentStrategy.id.desc())
+        .first()
+    )
 
 
 def _duration_bucket(seconds: float, profile: ContentProfile) -> str:

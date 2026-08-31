@@ -1,5 +1,6 @@
 from app.models.agent_run import AgentRun
 from app.models.asset import Asset, AudioAsset
+from app.models.automation_mode import AutomationMode
 from app.models.content_profile import ContentProfile
 from app.models.content_strategy import ContentStrategy
 from app.models.idea import Idea
@@ -14,6 +15,7 @@ __all__ = [
     "AgentRun",
     "Asset",
     "AudioAsset",
+    "AutomationMode",
     "ContentProfile",
     "ContentStrategy",
     "Idea",

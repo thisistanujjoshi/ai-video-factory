@@ -2,8 +2,9 @@
 
 import { use, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { api, type ContentProfile, type ContentStrategy } from "@/lib/api";
+import { api, type AutonomousCycleResult, type ContentProfile, type ContentStrategy } from "@/lib/api";
 import { button, buttonDanger, card, input, label } from "@/lib/ui";
+import { StateBadge } from "@/components/StateBadge";
 
 export default function ContentProfileDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -16,6 +17,8 @@ export default function ContentProfileDetailPage({ params }: { params: Promise<{
   const [error, setError] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
   const [generatingStrategy, setGeneratingStrategy] = useState(false);
+  const [runningCycle, setRunningCycle] = useState(false);
+  const [cycleResult, setCycleResult] = useState<AutonomousCycleResult | null>(null);
 
   useEffect(() => {
     api.getProfile(profileId).then(setProfile).catch((e) => setError(String(e)));
@@ -44,6 +47,18 @@ export default function ContentProfileDetailPage({ params }: { params: Promise<{
       setError(String(e));
     } finally {
       setGeneratingStrategy(false);
+    }
+  }
+
+  async function onRunAutonomousCycle() {
+    setRunningCycle(true);
+    setError(null);
+    try {
+      setCycleResult(await api.runAutonomousCycle(profileId));
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setRunningCycle(false);
     }
   }
 
@@ -95,6 +110,47 @@ export default function ContentProfileDetailPage({ params }: { params: Promise<{
             .map(([k]) => k)
             .join(", ") || "none"}
         </div>
+        <div>
+          <div className={label}>Automation mode</div>
+          {profile.automation_mode.replace("_", "-")}
+        </div>
+      </div>
+
+      <div className={`${card} space-y-3`}>
+        <div className="flex items-center justify-between">
+          <h2 className="font-medium">Autonomous cycle</h2>
+          <button
+            onClick={onRunAutonomousCycle}
+            disabled={runningCycle || profile.automation_mode === "manual"}
+            className={button}
+          >
+            {runningCycle ? "Running..." : "Run cycle now"}
+          </button>
+        </div>
+        {profile.automation_mode === "manual" && (
+          <p className="text-sm text-neutral-500">
+            Automation mode is manual — switch to semi-automatic or autonomous to enable this.
+          </p>
+        )}
+        {cycleResult && (
+          <div className="space-y-1 text-sm">
+            <p className="flex items-center gap-2">
+              Produced{" "}
+              <a href={`/videos/${cycleResult.video.id}`} className="underline">
+                video #{cycleResult.video.id}
+              </a>
+              <StateBadge state={cycleResult.video.state} />
+            </p>
+            <p className="text-neutral-400">
+              QA score {cycleResult.content_score} ({cycleResult.qa_passed ? "passed" : "failed"})
+            </p>
+            <p className="text-neutral-400">
+              {cycleResult.auto_published
+                ? `Auto-published to ${cycleResult.publications.map((p) => p.platform).join(", ")}.`
+                : "Not auto-published — needs human approval or QA didn't pass."}
+            </p>
+          </div>
+        )}
       </div>
 
       <div className={`${card} space-y-3`}>

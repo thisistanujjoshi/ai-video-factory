@@ -34,6 +34,8 @@ export interface Schedule {
   videos_per_day: number;
 }
 
+export type AutomationMode = "manual" | "semi_automatic" | "autonomous";
+
 export interface ContentProfile {
   id: number;
   name: string;
@@ -44,6 +46,7 @@ export interface ContentProfile {
   strategy: Strategy;
   publishing: Publishing;
   schedule: Schedule;
+  automation_mode: AutomationMode;
 }
 
 export interface IdeaScores {
@@ -168,6 +171,14 @@ export interface VideoAnalytics {
   totals: AnalyticsTotals;
 }
 
+export interface AutonomousCycleResult {
+  video: Video;
+  qa_passed: boolean;
+  content_score: number;
+  auto_published: boolean;
+  publications: Publication[];
+}
+
 export interface ContentStrategy {
   id: number;
   content_profile_id: number;
@@ -207,6 +218,8 @@ export const api = {
   generateStrategy: (id: number) =>
     request<ContentStrategy>(`/content-profiles/${id}/strategy/generate`, { method: "POST" }),
   getStrategy: (id: number) => request<ContentStrategy>(`/content-profiles/${id}/strategy`),
+  runAutonomousCycle: (id: number) =>
+    request<AutonomousCycleResult>(`/content-profiles/${id}/autonomous-cycle`, { method: "POST" }),
 
   generateIdeas: (contentProfileId: number, count = 10) =>
     request<Idea[]>("/ideas/generate", {

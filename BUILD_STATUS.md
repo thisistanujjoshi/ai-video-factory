@@ -533,3 +533,84 @@ profile; a second profile is unaffected by the first's history).
 production → QA → publishing → analytics → strategy loop, with
 MANUAL/SEMI_AUTOMATIC/AUTONOMOUS safety modes per content profile (spec
 section 52).
+
+## Phase 9 — Autonomous Mode
+
+**Status:** Complete (synchronous on-demand cycle, no real scheduler —
+see limitations)
+
+**Implemented:**
+- `AutomationMode` enum (`manual`/`semi_automatic`/`autonomous`) as a
+  first-class column on `ContentProfile`, **defaulting to `manual`** —
+  new profiles never auto-run by accident (spec section 52's safety
+  intent). Migration backfills existing rows to `manual` too (verified
+  against a pre-existing row, not just an empty table — see the migration
+  file's comment).
+- Refactored idea→script→storyboard generation out of the `/videos/
+  generate` endpoint into `app/services/pipeline.py` so both that
+  endpoint and the new autonomous cycle share one implementation instead
+  of two copies drifting apart.
+- `run_autonomous_cycle()` (`app/services/autonomous.py`): ideas
+  (research is skipped — no `ResearchAgent` exists, see Phase 1) →
+  production → QA → for `AUTONOMOUS` only, auto-approve + auto-publish,
+  gated by `can_auto_publish()` — AUTONOMOUS mode AND technical QA passed
+  AND content approved AND score ≥ threshold AND no content issues,
+  written out as separate explicit conditions (not just `outcome.passed`)
+  because this is the one safety-critical decision in the whole system.
+  `MANUAL` refuses to run at all (`AutomationDisabledError` → 409);
+  `SEMI_AUTOMATIC` runs through QA and stops at `awaiting_approval`/
+  `qa_failed` for a human.
+- API: `POST /content-profiles/{id}/autonomous-cycle`. Frontend: profile
+  detail page shows the mode, offers an automation-mode selector on
+  create, and a "Run cycle now" button (disabled for `manual`) showing
+  the outcome.
+
+**A real bug, found and fixed via live manual testing** (not just unit
+tests): running the cycle twice on the same profile crashed with an
+unhandled 500. Cause: the mock LLM returns the *exact same* canned ideas
+every call, so Phase 8's content-memory dedup correctly rejected 100% of
+the second cycle's ideas as duplicates of the first cycle's — leaving
+zero ideas and an unhandled `RuntimeError`. Fixed with a dedicated
+`NoViableIdeasError` → clean `422` with an explanatory message, not a
+workaround that reuses a stale idea (which would defeat dedup). This is
+mock-specific — a real LLM varies output call to call — but the failure
+mode is real regardless of provider, so the fix stands generally.
+Re-verified live after the fix: same repeat-cycle call now returns 422
+with a clear message instead of crashing.
+
+**Tests:** 76 passed, 2 skipped (unrelated Gemini live tests). New:
+`test_automation.py` (the `can_auto_publish` gate exhaustively — mode,
+score, technical failure, content issues, each independently; all three
+mode behaviors against a real render+QA pipeline; the repeat-cycle bug
+fix), `test_automation_api.py` (same at the HTTP layer, plus the 409/422
+status codes).
+
+**Verified live** against a running server (not just the test suite): a
+fresh `autonomous`-mode profile went from zero to a real rendered,
+QA'd, auto-approved, auto-published video in one API call (~8.6s
+end-to-end with the mock LLM/providers) — this is the Phase 9 acceptance
+criterion in its most literal form, watched actually happen.
+
+**Known limitations:**
+- No real scheduler — "Scheduled Research" from the spec's Phase 9
+  diagram doesn't exist; the cycle is synchronous and triggered on
+  demand (dashboard button, or an external cron hitting the endpoint).
+  Same Celery-beat gap noted throughout this project; wiring one up
+  would make this genuinely autonomous rather than autonomous-when-asked.
+- No `ResearchAgent` (Phase 1's own deferred item) — the cycle skips
+  straight to ideation.
+- One video per cycle call, not `schedule.videos_per_day` per day — that
+  field exists on the profile but nothing reads it yet.
+- The auto-publish gate has no separate "policy/risk flag" detector
+  beyond what QA's content-review already produces (`content.issues`)
+  — matches what the system actually has, but section 52's phrase
+  "no policy/risk flags exist" could mean more (brand safety, platform
+  ToS checks) in a fuller build.
+
+**Final acceptance test (spec section 63):** every one of the 22 listed
+steps has a working, tested path through this system as of this phase —
+content profile creation through strategy-informed future ideation, with
+the loop's autonomous closure (step 22, "future idea generation uses the
+updated strategy") demonstrated directly in Phase 8's
+`test_strategy_integration.py` and now driven end-to-end without human
+intervention for `AUTONOMOUS` profiles in this phase.

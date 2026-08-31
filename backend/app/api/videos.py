@@ -3,7 +3,6 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app.agents.scripts import ScriptAgent
 from app.agents.storyboard import StoryboardAgent
 from app.database import get_db
 from app.models import ContentProfile, Idea, Publication, Script, Video, VideoState, transition
@@ -13,6 +12,7 @@ from app.schemas.publication import PublicationOut, ScheduleRequest
 from app.schemas.qa import QAReportOut
 from app.schemas.video import VideoOut
 from app.services.analytics import collect_metrics_for_video
+from app.services.pipeline import generate_video_from_idea
 from app.services.production import produce_video
 from app.services.publishing import publish_video, schedule_video
 from app.services.qa import run_qa
@@ -51,13 +51,6 @@ class VideoGenerateRequest(BaseModel):
 
 @router.post("/generate", response_model=VideoOut, status_code=201)
 async def generate_video(payload: VideoGenerateRequest, db: Session = Depends(get_db)) -> Video:
-    """Idea -> script -> storyboard, synchronously.
-
-    ponytail: no Celery job here yet -- the mock LLM is instant, so a
-    request/response round trip is the whole pipeline. Move this behind a
-    job when Phase 2 adds asset generation/rendering, which actually takes
-    real time and benefits from being async + parallel per scene.
-    """
     idea = db.get(Idea, payload.idea_id)
     if idea is None:
         raise HTTPException(status_code=404, detail="idea not found")
@@ -65,28 +58,7 @@ async def generate_video(payload: VideoGenerateRequest, db: Session = Depends(ge
     if profile is None:
         raise HTTPException(status_code=404, detail="content profile not found")
 
-    llm = get_llm_provider()
-
-    video = Video(
-        content_profile_id=profile.id, idea_id=idea.id, state=VideoState.DRAFT, title=idea.title
-    )
-    db.add(video)
-    db.flush()
-
-    transition(video, VideoState.IDEA_SELECTED)
-
-    transition(video, VideoState.SCRIPT_GENERATING)
-    script = await ScriptAgent(llm).generate(db, idea, profile)
-    video.script_id = script.id
-    transition(video, VideoState.SCRIPT_READY)
-
-    transition(video, VideoState.STORYBOARD_GENERATING)
-    await StoryboardAgent(llm).generate(db, script, profile, video)
-    transition(video, VideoState.STORYBOARD_READY)
-
-    db.commit()
-    db.refresh(video)
-    return video
+    return await generate_video_from_idea(db, idea, profile)
 
 
 @router.post("/{video_id}/render", response_model=VideoOut)

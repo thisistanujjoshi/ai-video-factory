@@ -1,5 +1,7 @@
 from pydantic import BaseModel, ConfigDict
 
+from app.models.automation_mode import AutomationMode
+
 
 class Niche(BaseModel):
     primary: str
@@ -50,6 +52,7 @@ class ContentProfileCreate(BaseModel):
     strategy: Strategy = Strategy()
     publishing: Publishing = Publishing()
     schedule: Schedule = Schedule()
+    automation_mode: AutomationMode = AutomationMode.MANUAL
 
 
 class ContentProfileOut(ContentProfileCreate):

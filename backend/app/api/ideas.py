@@ -4,9 +4,10 @@ from sqlalchemy.orm import Session
 
 from app.agents.ideas import IdeaAgent
 from app.database import get_db
-from app.models import ContentProfile, ContentStrategy, Idea, ResearchItem
+from app.models import ContentProfile, Idea, ResearchItem
 from app.providers.llm import get_llm_provider
 from app.schemas.idea import IdeaOut
+from app.services.strategy import latest_strategy
 
 router = APIRouter(prefix="/ideas", tags=["ideas"])
 
@@ -15,15 +16,6 @@ class IdeaGenerateRequest(BaseModel):
     content_profile_id: int
     research_item_id: int | None = None
     count: int = 20
-
-
-def _latest_strategy(db: Session, content_profile_id: int) -> ContentStrategy | None:
-    return (
-        db.query(ContentStrategy)
-        .filter_by(content_profile_id=content_profile_id)
-        .order_by(ContentStrategy.id.desc())
-        .first()
-    )
 
 
 @router.post("/generate", response_model=list[IdeaOut])
@@ -38,7 +30,7 @@ async def generate_ideas(payload: IdeaGenerateRequest, db: Session = Depends(get
         if research is None:
             raise HTTPException(status_code=404, detail="research item not found")
 
-    strategy = _latest_strategy(db, profile.id)
+    strategy = latest_strategy(db, profile.id)
 
     agent = IdeaAgent(get_llm_provider())
     ideas = await agent.generate(db, profile, research, count=payload.count, strategy=strategy)
