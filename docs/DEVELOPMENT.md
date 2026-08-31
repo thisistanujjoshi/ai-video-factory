@@ -63,3 +63,20 @@ component and an overall `"degraded"` status instead of raising. This is
 what let Phase 0 be built and tested on a machine with no Docker daemon —
 confirm real connectivity via `docker compose up` + `curl` once Docker is
 available.
+
+## Generating a migration without a live Postgres
+
+`alembic revision --autogenerate` needs to connect to `DATABASE_URL` to
+diff against the current schema. Without Postgres running, point it at a
+throwaway SQLite file instead — the generated migration (create_table /
+add_column DDL via `op.*`) is dialect-portable:
+
+```bash
+cd backend
+DATABASE_URL="sqlite:///./_migration_gen.db" uv run alembic revision --autogenerate -m "message"
+DATABASE_URL="sqlite:///./_migration_gen.db" uv run alembic upgrade head  # sanity check it applies
+rm _migration_gen.db
+```
+
+Re-run `alembic upgrade head` against real Postgres before trusting the
+migration in a deploy.

@@ -1,0 +1,44 @@
+# Example content profile matching app.schemas.content_profile.ContentProfileCreate.
+# Not auto-loaded yet -- create profiles via POST /api/v1/content-profiles.
+# This file is a reference fixture (spec section 7); add a loader if/when
+# bulk-importing profiles from YAML actually becomes a workflow.
+name: Dark Mysteries
+
+niche:
+  primary: mystery
+  secondary:
+    - unexplained
+    - historical mysteries
+    - strange events
+
+audience:
+  min_age: 18
+  max_age: 35
+  language: English
+
+video:
+  type: short
+  min_duration_seconds: 45
+  max_duration_seconds: 75
+  aspect_ratio: "9:16"
+  resolution: "1080x1920"
+
+style:
+  tone: mysterious
+  pacing: fast
+  narration: dramatic
+  visual_style: cinematic
+
+strategy:
+  hook_types:
+    - curiosity
+    - question
+    - shocking_fact
+
+publishing:
+  youtube: true
+  instagram: true
+  tiktok: true
+
+schedule:
+  videos_per_day: 2

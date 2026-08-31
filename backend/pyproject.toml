@@ -30,6 +30,11 @@ asyncio_mode = "auto"
 [tool.ruff]
 line-length = 100
 
+[tool.ruff.lint]
+# B008: FastAPI's Depends(...)-as-default-argument is the documented DI
+# pattern, not the bug bugbear is warning about.
+ignore = ["B008"]
+
 [tool.black]
 line-length = 100
 

@@ -1,0 +1,14 @@
+Write a short-form video script for this idea, for the content profile "$profile_name" (tone: $tone, pacing: $pacing, narration style: $narration_style).
+
+Idea title: $idea_title
+Premise: $idea_premise
+Hook: $idea_hook
+Target duration: $min_duration-$max_duration seconds
+
+Structure the narration through: HOOK, SETUP, CURIOSITY, ESCALATION, REVEAL,
+PAYOFF, CTA. Keep it concise, avoid filler, and do not reuse a generic hook.
+
+Respond with JSON:
+{"title": "...", "hook": "...", "narration": "...",
+"estimated_duration_seconds": 60, "cta": "...", "engagement_question": "...",
+"scenes": [{"scene_number": 1, "narration": "..."}]}

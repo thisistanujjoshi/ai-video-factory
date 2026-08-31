@@ -1,0 +1,17 @@
+Convert this script into a shot-by-shot storyboard for a $aspect_ratio
+vertical video (visual style: $visual_style).
+
+Script title: $script_title
+Narration: $narration
+Rough scene beats: $scene_beats
+
+For each beat, produce a full scene: scene_number, duration_seconds,
+narration (verbatim excerpt for that beat), visual_prompt (a concrete
+description for an image/video generator), camera_motion (e.g. slow_push,
+static, pan_left), caption (on-screen text), transition (e.g. cut, fade),
+and sound_effect (or null).
+
+Respond with JSON:
+{"scenes": [{"scene_number": 1, "duration_seconds": 4.0,
+"narration": "...", "visual_prompt": "...", "camera_motion": "...",
+"caption": "...", "transition": "...", "sound_effect": null}]}
