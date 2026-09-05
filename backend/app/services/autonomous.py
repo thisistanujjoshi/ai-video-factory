@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from sqlalchemy.orm import Session
 
 from app.agents.ideas import IdeaAgent
+from app.agents.research import ResearchAgent
 from app.models import (
     AutomationMode,
     ContentProfile,
@@ -20,6 +21,7 @@ from app.services.qa import QA_SCORE_THRESHOLD, QAOutcome, run_qa
 from app.services.strategy import latest_strategy
 
 DEFAULT_IDEA_COUNT = 5
+DEFAULT_RESEARCH_COUNT = 3
 
 
 class AutomationDisabledError(Exception):
@@ -68,10 +70,10 @@ class AutonomousCycleResult:
 async def run_autonomous_cycle(
     db: Session, profile: ContentProfile, idea_count: int = DEFAULT_IDEA_COUNT
 ) -> AutonomousCycleResult:
-    """Research (skipped -- no ResearchAgent, see Phase 1) -> ideas ->
-    production -> QA -> (AUTONOMOUS only) auto-approve + auto-publish.
-    Refuses outright for MANUAL profiles; SEMI_AUTOMATIC runs through QA
-    and stops, leaving approval to a human via the existing endpoints.
+    """Research -> ideas -> production -> QA -> (AUTONOMOUS only)
+    auto-approve + auto-publish. Refuses outright for MANUAL profiles;
+    SEMI_AUTOMATIC runs through QA and stops, leaving approval to a human
+    via the existing endpoints.
     """
     if profile.automation_mode == AutomationMode.MANUAL:
         raise AutomationDisabledError(
@@ -79,8 +81,15 @@ async def run_autonomous_cycle(
         )
 
     strategy = latest_strategy(db, profile.id)
+    research_items = await ResearchAgent(get_llm_provider()).generate(
+        db, profile, count=DEFAULT_RESEARCH_COUNT
+    )
+    db.commit()
+    best_research = max(
+        research_items, key=lambda r: r.trend_score + r.novelty_score, default=None
+    )
     ideas = await IdeaAgent(get_llm_provider()).generate(
-        db, profile, count=idea_count, strategy=strategy
+        db, profile, best_research, count=idea_count, strategy=strategy
     )
     db.commit()
     if not ideas:

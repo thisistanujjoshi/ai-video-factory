@@ -83,6 +83,22 @@ def _mock_storyboard(count: int) -> dict:
     }
 
 
+def _mock_research(count: int) -> dict:
+    return {
+        "items": [
+            {
+                "topic": f"Mock Research Topic {i + 1}",
+                "summary": f"Summary of a trending angle {i + 1} in this niche.",
+                "why_now": f"Why angle {i + 1} is timely right now.",
+                "trend_score": 60 + (i % 30),
+                "novelty_score": 55 + (i % 35),
+                "sources": [],
+            }
+            for i in range(count)
+        ]
+    }
+
+
 def _mock_qa(count: int) -> dict:
     # ponytail: always approves, deliberately. Mock content is bland but
     # never actually bad, so there's nothing for a content review to catch
@@ -110,6 +126,7 @@ def _mock_strategy(count: int) -> dict:
 
 
 _MOCK_GENERATORS = {
+    "research": _mock_research,
     "ideas": _mock_ideas,
     "script": _mock_script,
     "storyboard": _mock_storyboard,

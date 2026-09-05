@@ -116,7 +116,7 @@ def get_latest_strategy(profile_id: int, db: Session = Depends(get_db)) -> Conte
 async def run_autonomous_cycle_endpoint(
     profile_id: int, db: Session = Depends(get_db)
 ) -> AutonomousCycleOut:
-    """One full research(skipped)->ideas->production->QA->(AUTONOMOUS only)
+    """One full research->ideas->production->QA->(AUTONOMOUS only)
     publish cycle, synchronously. Refused (409) for automation_mode=manual.
     """
     profile = db.get(ContentProfile, profile_id)
