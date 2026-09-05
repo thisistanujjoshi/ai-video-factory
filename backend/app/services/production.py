@@ -56,70 +56,99 @@ async def produce_video(db: Session, video: Video, profile: ContentProfile) -> N
             work_dir = Path(tmp)
             render_inputs = []
 
+            # Visual and voiceover are committed independently (right after
+            # each provider call, below) and reused here if already present --
+            # so a failure anywhere in this loop (e.g. the TTS call for scene
+            # 2) can't undo a visual that already generated successfully
+            # (e.g. scene 2's own image, or all of scene 1). Without this, a
+            # retry would re-roll every not-yet-committed asset from scratch,
+            # and a real (non-deterministic) provider could render a
+            # different-looking character than the attempt before it.
+            existing_visuals = {a.scene_id: a for a in db.query(Asset).filter_by(video_id=video.id)}
+            existing_audio = {
+                a.scene_id: a
+                for a in db.query(AudioAsset).filter_by(video_id=video.id, kind="voiceover")
+            }
+
             for scene in video.scenes:
-                if video_provider is not None:
-                    visual_bytes = await video_provider.generate_video_clip(
-                        scene.visual_prompt,
-                        duration_seconds=scene.duration_seconds,
-                        width=width,
-                        height=height,
-                    )
-                    visual_path = await storage.upload(
-                        f"videos/{video.id}/scenes/{scene.scene_number}/clip.mp4", visual_bytes
-                    )
-                    asset_type = "video"
-                    asset_provider: object = video_provider
+                visual_asset = existing_visuals.get(scene.id)
+                if visual_asset is not None:
+                    visual_path = visual_asset.path
+                    visual_is_video = visual_asset.type == "video"
                 else:
-                    visual_bytes = await image_provider.generate_image(
-                        scene.visual_prompt, width=width, height=height
-                    )
-                    visual_path = await storage.upload(
-                        f"videos/{video.id}/scenes/{scene.scene_number}/image.png", visual_bytes
-                    )
-                    asset_type = "image"
-                    asset_provider = image_provider
+                    if video_provider is not None:
+                        visual_bytes = await video_provider.generate_video_clip(
+                            scene.visual_prompt,
+                            duration_seconds=scene.duration_seconds,
+                            width=width,
+                            height=height,
+                        )
+                        visual_path = await storage.upload(
+                            f"videos/{video.id}/scenes/{scene.scene_number}/clip.mp4", visual_bytes
+                        )
+                        asset_type = "video"
+                        asset_provider: object = video_provider
+                    else:
+                        visual_bytes = await image_provider.generate_image(
+                            scene.visual_prompt, width=width, height=height
+                        )
+                        visual_path = await storage.upload(
+                            f"videos/{video.id}/scenes/{scene.scene_number}/image.png", visual_bytes
+                        )
+                        asset_type = "image"
+                        asset_provider = image_provider
 
-                db.add(
-                    Asset(
-                        video_id=video.id,
-                        scene_id=scene.id,
-                        type=asset_type,
-                        provider=type(asset_provider).__name__,
-                        source=(
-                            "mock"
-                            if asset_type == "image"
-                            else type(asset_provider).__name__.lower()
-                        ),
-                        path=visual_path,
+                    db.add(
+                        Asset(
+                            video_id=video.id,
+                            scene_id=scene.id,
+                            type=asset_type,
+                            provider=type(asset_provider).__name__,
+                            source=(
+                                "mock"
+                                if asset_type == "image"
+                                else type(asset_provider).__name__.lower()
+                            ),
+                            path=visual_path,
+                        )
                     )
-                )
+                    db.commit()
+                    visual_is_video = video_provider is not None
 
-                audio_bytes = await tts_provider.generate_voiceover(
-                    scene.narration, duration_seconds=scene.duration_seconds
-                )
-                actual_duration = _wav_duration_seconds(audio_bytes)
+                audio_asset = existing_audio.get(scene.id)
+                if audio_asset is not None:
+                    audio_path = audio_asset.path
+                    actual_duration = audio_asset.duration_seconds
+                else:
+                    audio_bytes = await tts_provider.generate_voiceover(
+                        scene.narration, duration_seconds=scene.duration_seconds
+                    )
+                    actual_duration = _wav_duration_seconds(audio_bytes)
+
+                    audio_path = await storage.upload(
+                        f"videos/{video.id}/scenes/{scene.scene_number}/voiceover.wav", audio_bytes
+                    )
+                    db.add(
+                        AudioAsset(
+                            video_id=video.id,
+                            scene_id=scene.id,
+                            kind="voiceover",
+                            provider=type(tts_provider).__name__,
+                            path=audio_path,
+                            duration_seconds=actual_duration,
+                        )
+                    )
+                    db.commit()
+
                 scene.duration_seconds = actual_duration  # retime to the real voiceover length
-
-                audio_path = await storage.upload(
-                    f"videos/{video.id}/scenes/{scene.scene_number}/voiceover.wav", audio_bytes
-                )
-                db.add(
-                    AudioAsset(
-                        video_id=video.id,
-                        scene_id=scene.id,
-                        kind="voiceover",
-                        provider=type(tts_provider).__name__,
-                        path=audio_path,
-                        duration_seconds=actual_duration,
-                    )
-                )
+                db.commit()
 
                 render_inputs.append(
                     SceneRenderInput(
                         visual_path=Path(visual_path),
                         audio_path=Path(audio_path),
                         duration_seconds=actual_duration,
-                        visual_is_video=video_provider is not None,
+                        visual_is_video=visual_is_video,
                     )
                 )
 

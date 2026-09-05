@@ -76,6 +76,31 @@ async def render_video_endpoint(video_id: int, db: Session = Depends(get_db)) ->
     return video
 
 
+@router.post("/{video_id}/retry", response_model=VideoOut)
+async def retry_video(video_id: int, db: Session = Depends(get_db)) -> Video:
+    """Retry production after a FAILED video (e.g. a transient provider
+    error or a rendering hiccup) -- reuses the existing storyboard/scenes
+    rather than regenerating them, since a production failure isn't a
+    content problem (that's /regenerate, for QA_FAILED). `produce_video`
+    itself skips any scene that already has a committed visual + voiceover
+    from a prior attempt, so a failure partway through doesn't re-roll
+    scenes that already succeeded (e.g. a character's established look)."""
+    video = db.get(Video, video_id)
+    if video is None:
+        raise HTTPException(status_code=404, detail="video not found")
+    _require_state(video, VideoState.FAILED)
+    profile = db.get(ContentProfile, video.content_profile_id)
+    if profile is None:
+        raise HTTPException(status_code=404, detail="content profile not found")
+
+    transition(video, VideoState.STORYBOARD_READY)
+    db.commit()
+
+    await produce_video(db, video, profile)
+    db.refresh(video)
+    return video
+
+
 @router.post("/{video_id}/qa", response_model=QAReportOut)
 async def qa_video(video_id: int, db: Session = Depends(get_db)) -> QAReportOut:
     video = db.get(Video, video_id)

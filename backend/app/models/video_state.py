@@ -48,7 +48,7 @@ VALID_TRANSITIONS: dict[VideoState, set[VideoState]] = {
     VideoState.SCHEDULED: {VideoState.PUBLISHING, VideoState.FAILED},
     VideoState.PUBLISHING: {VideoState.PUBLISHED, VideoState.FAILED},
     VideoState.PUBLISHED: set(),
-    VideoState.FAILED: set(),
+    VideoState.FAILED: {VideoState.STORYBOARD_READY},
     VideoState.REJECTED: set(),
 }
 

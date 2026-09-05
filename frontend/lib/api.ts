@@ -234,6 +234,7 @@ export const api = {
   listVideos: () => request<Video[]>("/videos"),
   getVideo: (id: number) => request<Video>(`/videos/${id}`),
   renderVideo: (id: number) => request<Video>(`/videos/${id}/render`, { method: "POST" }),
+  retryVideo: (id: number) => request<Video>(`/videos/${id}/retry`, { method: "POST" }),
   qaVideo: (id: number) => request<QAReport>(`/videos/${id}/qa`, { method: "POST" }),
   regenerateVideo: (id: number) => request<Video>(`/videos/${id}/regenerate`, { method: "POST" }),
   approveVideo: (id: number) => request<Video>(`/videos/${id}/approve`, { method: "POST" }),

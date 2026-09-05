@@ -5,7 +5,7 @@ import { api, type Publication, type QAReport, type Video } from "@/lib/api";
 import { button, buttonDanger, card, input } from "@/lib/ui";
 import { StateBadge } from "@/components/StateBadge";
 
-const NO_ACTION_STATES = ["draft", "idea_selected", "published", "rejected", "failed"];
+const NO_ACTION_STATES = ["draft", "idea_selected", "published", "rejected"];
 
 export default function VideoDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -70,6 +70,11 @@ export default function VideoDetailPage({ params }: { params: Promise<{ id: stri
             }
           >
             Run QA
+          </button>
+        )}
+        {video.state === "failed" && (
+          <button disabled={busy} className={button} onClick={() => run(() => api.retryVideo(video.id))}>
+            Retry
           </button>
         )}
         {video.state === "qa_failed" && (
