@@ -1,12 +1,28 @@
 # AI Video Factory
 
-Automates short-form video production end to end: research, idea generation,
-scripting, storyboarding, asset generation, narration, rendering, QA, human
-approval, publishing (YouTube Shorts, Instagram Reels, TikTok), analytics,
-and strategy learning.
+An end-to-end pipeline that turns a content niche into a published short-form
+video with no manual editing: research a trending topic, generate an idea,
+write a script, storyboard it into scenes, generate visuals and narration for
+each scene, render with ffmpeg, run automated QA, get human approval on a
+dashboard, then publish to YouTube Shorts / Instagram Reels / TikTok — with
+analytics feeding back into what gets picked next time.
+
+```
+Content Profile → Research → Ideation → Scripting → Storyboard →
+Assets → Voiceover → Captions → Render (ffmpeg) → QA → Approval →
+Schedule → Publish → Analytics → Strategy → (feeds back into Ideation)
+```
+
+Every AI vendor (LLM, image, video, TTS) sits behind a provider interface
+selected via env vars, defaulting to a mock — so the whole pipeline runs and
+is fully testable with zero API keys and zero spend before any real provider
+exists. Real Gemini-backed LLM, image, and TTS providers are implemented and
+live-verified; a real Veo video provider is implemented but not yet
+live-tested (quota-gated) — see [BUILD_STATUS.md](BUILD_STATUS.md) for
+exactly what's verified vs. implemented-only.
 
 Full design in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Current build
-progress in [BUILD_STATUS.md](BUILD_STATUS.md).
+progress, phase-by-phase, in [BUILD_STATUS.md](BUILD_STATUS.md).
 
 ## Stack
 
